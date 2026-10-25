@@ -76,10 +76,6 @@ header h1 span { color: var(--muted); font-weight: 500; }
 .progress .track div { height: 100%; background: var(--fg); transition: width .6s ease; }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
 .stat b { display: block; font: 600 20px var(--font-display); }
-.calc { border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 8px; font-size: 14px; }
-.calc h3 { margin: 0; font: 600 16px var(--font-display); }
-.calc .track > div { transition: width .4s; }
-.calc .verdict { font-weight: 700; }
 
 /* Map + panel */
 .geo { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 20px; align-items: start; }
@@ -159,11 +155,14 @@ button:focus-visible, tr:focus-visible { outline: 2px solid var(--accent); outli
       <div class="mid"><div class="label">Vantagem</div><div class="gap num" id="gap">–</div><div class="label num" id="gapv"></div></div>
       <div class="cand right" id="cB"></div>
     </div>
-    <div class="calc" id="calc"></div>
     <div class="bar" id="natbar"></div>
     <div class="progress">
       <div class="label num" id="sect">Seções totalizadas</div>
       <div class="track"><div id="secbar" style="width:0"></div></div>
+    </div>
+    <div class="progress">
+      <div class="label num" id="mathlbl"></div>
+      <div class="track"><div id="mathbar" style="width:0"></div></div>
     </div>
     <div class="stats num" id="stats"></div>
   </section>
@@ -291,24 +290,13 @@ function renderHero() {
 // to the trailing candidate, so once the lead exceeds the electorate of the uncounted
 // sections (e.esnt) no outcome of the rest can flip it.
 function renderCalc(d, lead, trail) {
-  const e = d.e, v = d.v, left = +e.esnt || 0, margin = lead.votes - trail.votes;
-  if (!left && d.tf !== "s") { $("calc").innerHTML = ""; return; }
-  const sure = margin > left || d.tf === "s";
-  const rate = (+v.vv) / (+e.est || 1);                // valid votes per voter, in counted sections
-  const expected = left * rate;                          // valid votes still expected
-  const need = expected > 0 ? (expected + margin) / 2 / expected * 100 : Infinity;
-  const name = c => `<b style="color:${COLOR[c.n]}">${esc(c.name)}</b>`;
-  let html = `<h3>Já dá para saber quem venceu?</h3>`;
-  if (sure) {
-    html += `<div class="verdict" style="color:${COLOR[lead.n]}">Sim: ${esc(lead.name)} venceu matematicamente.</div>
-      <div>A vantagem (${fmt(margin)} votos) é maior que todos os eleitores das seções ainda não apuradas (${fmt(left)}). Mesmo que todos fossem votar e escolhessem ${esc(trail.name)}, não daria para virar.</div>`;
-  } else {
-    html += `<div class="verdict">Ainda não é matematicamente certo.</div>
-      <div>Vantagem de ${name(lead)}: <b>${fmt(margin)}</b> votos. Eleitores nas seções que faltam apurar: <b>${fmt(left)}</b>. Fica decidido quando a vantagem passar desse número (a barra enche).</div>
-      <div class="track" aria-hidden="true"><div style="width:${Math.min(100, margin / left * 100)}%;background:${COLOR[lead.n]}"></div></div>
-      <div class="note">Estimativa (não é certeza): com o comparecimento e os votos válidos vistos até agora (${dec(rate * 100, 1)}% dos eleitores), faltam cerca de ${fmt(Math.round(expected))} votos válidos. Para virar, ${esc(trail.name)} precisaria de ${need > 100 ? "mais de 100% deles: impossível nesse ritmo" : `<b>${dec(need, 1)}%</b> deles`}.</div>`;
-  }
-  $("calc").innerHTML = html;
+  const left = +d.e.esnt || 0, margin = lead.votes - trail.votes;
+  const sure = d.tf === "s" || margin > left;
+  $("mathlbl").textContent = sure
+    ? `${lead.name} venceu matematicamente: vantagem de ${fmt(margin)} votos > ${fmt(left)} eleitores ainda não apurados`
+    : `Vitória matemática: vantagem de ${fmt(margin)} votos de ${fmt(left)} eleitores ainda não apurados (${dec(margin / left * 100, 1)}%)`;
+  $("mathbar").style.width = (sure ? 100 : Math.max(0, margin / left * 100)) + "%";
+  $("mathbar").style.background = COLOR[lead.n];
 }
 
 function presFill(code) {
