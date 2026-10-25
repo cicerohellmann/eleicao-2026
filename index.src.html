@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Eleições 2026 Apuração</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect x=%221%22 y=%223%22 width=%227%22 height=%2210%22 fill=%22%23c8202f%22/%3E%3Crect x=%228%22 y=%223%22 width=%227%22 height=%2210%22 fill=%22%231f4fb5%22/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: national presidential count on top; map + selected-state panel; trend + state table below. */
+:root {
+  --bg: #f3f5f2;
+  --surface: #ffffff;
+  --fg: #17201b;
+  --muted: #5d6a62;
+  --line: #d9dfda;
+  --map-base: #e3e8e4;
+  --lula: #c8202f;
+  --flavio: #1f4fb5;
+  --accent: #0d7a4a;
+  --warn: #a35f00;
+  --font-display: "Saira Condensed", "Arial Narrow", sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #101512; --surface: #182019; --fg: #e7ece8; --muted: #93a198; --line: #2c372f;
+    --map-base: #263029; --lula: #ef4e5a; --flavio: #5a8cf0; --accent: #3fbf84; --warn: #e9a23b;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.45 var(--font-body);
+  padding: 20px max(16px, env(safe-area-inset-right, 0px)) 40px max(16px, env(safe-area-inset-left, 0px));
+}
+.wrap { max-width: 1180px; margin: 0 auto; display: grid; gap: 20px; }
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+.num { font-variant-numeric: tabular-nums; }
+.label { font: 500 11px/1.2 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+
+header { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: end; justify-content: space-between; }
+header h1 { font: 700 34px/1 var(--font-display); letter-spacing: .01em; }
+header h1 span { color: var(--muted); font-weight: 500; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font: 13px var(--font-mono); color: var(--muted); }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 99px; font: 600 12px var(--font-mono); letter-spacing: .04em; text-transform: uppercase; border: 1px solid currentColor; }
+.pill.live { color: var(--accent); }
+.pill.live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: blink 1.6s infinite; }
+.pill.done { color: var(--fg); }
+.pill.stale { color: var(--warn); }
+@keyframes blink { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .pill.live::before { animation: none; } }
+.err { color: var(--warn); font: 13px var(--font-mono); }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; min-width: 0; }
+
+/* National hero */
+.hero { display: grid; gap: 14px; }
+.duel { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: end; }
+.cand { display: grid; gap: 2px; }
+.cand.right { text-align: right; }
+.cand .name { font: 600 22px/1.1 var(--font-display); letter-spacing: .02em; text-transform: uppercase; }
+.cand .pct { font: 700 clamp(46px, 9vw, 84px)/0.95 var(--font-display); }
+.cand .votes { font: 14px var(--font-mono); color: var(--muted); }
+.chip { display: inline-block; font: 600 11px var(--font-mono); letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; color: var(--bg); }
+.mid { text-align: center; padding-bottom: 6px; }
+.mid .gap { font: 700 26px/1 var(--font-display); }
+.bar { position: relative; height: 22px; border-radius: 4px; overflow: hidden; display: flex; background: var(--map-base); }
+.bar > div { height: 100%; transition: width .6s ease; }
+.bar::after { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 2px; background: var(--fg); opacity: .7; }
+.progress { display: grid; gap: 6px; }
+.progress .track { height: 6px; border-radius: 3px; background: var(--map-base); overflow: hidden; }
+.progress .track div { height: 100%; background: var(--fg); transition: width .6s ease; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
+.stat b { display: block; font: 600 20px var(--font-display); }
+
+/* Map + panel */
+.geo { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 820px) { .geo { grid-template-columns: 1fr; } }
+.maphead { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: center; margin-bottom: 8px; }
+.toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.toggle button { font: 500 12px var(--font-mono); padding: 5px 10px; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.toggle button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+svg.map { width: 100%; height: auto; display: block; }
+svg.map path { stroke: var(--surface); stroke-width: 1; cursor: pointer; transition: fill .4s; }
+svg.map path:hover, svg.map path:focus { stroke: var(--fg); stroke-width: 1.6; outline: none; }
+svg.map path.sel { stroke: var(--fg); stroke-width: 2.4; }
+svg.map text { font: 600 9px var(--font-mono); fill: var(--fg); pointer-events: none; paint-order: stroke; stroke: var(--surface); stroke-width: 2.5px; }
+svg.map circle.ro { fill: var(--accent); stroke: var(--surface); stroke-width: 1.5; pointer-events: none; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font: 12px var(--font-mono); color: var(--muted); margin-top: 8px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.abroad { margin-top: 8px; display: block; width: 100%; text-align: left; font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; cursor: pointer; }
+.abroad.sel { border-color: var(--fg); }
+
+.panel { display: grid; gap: 18px; }
+.panel h2 { font: 700 30px/1 var(--font-display); }
+.race { display: grid; gap: 8px; }
+.race h3 { font: 600 17px var(--font-display); letter-spacing: .03em; text-transform: uppercase; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: baseline; }
+.row .who { font-weight: 500; overflow-wrap: anywhere; }
+.row .who small { color: var(--muted); font: 12px var(--font-mono); margin-left: 4px; }
+.row .p { font: 600 18px var(--font-display); }
+.row .meter { grid-column: 1 / -1; height: 8px; border-radius: 2px; background: var(--map-base); overflow: hidden; }
+.row .meter div { height: 100%; transition: width .6s ease; }
+.row .v { grid-column: 1 / -1; font: 12px var(--font-mono); color: var(--muted); }
+.note { font-size: 13px; color: var(--muted); }
+
+/* Trend */
+.trend svg { width: 100%; height: auto; display: block; }
+.trend text { font: 11px var(--font-mono); fill: var(--muted); }
+
+/* Table */
+.tablewrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+th:first-child, td:first-child, th.l, td.l { text-align: left; }
+th { font: 500 11px var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); cursor: pointer; user-select: none; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: var(--bg); }
+tbody tr.sel { background: var(--bg); box-shadow: inset 3px 0 var(--fg); }
+td .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+footer { font-size: 12px; color: var(--muted); }
+footer a { color: inherit; }
+button:focus-visible, tr:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="label">Brazil · 2nd round · 25 Oct 2026</div>
+      <h1>Apuração ao vivo <span>· President &amp; governors</span></h1>
+    </div>
+    <div class="meta">
+      <span id="status" class="pill live">Loading</span>
+      <span id="updated">Waiting for TSE…</span>
+      <span id="next"></span>
+    </div>
+  </header>
+  <div id="error" class="err" hidden></div>
+
+  <section class="card hero" aria-label="National presidential count">
+    <div class="label">President · Brazil (incl. abroad)</div>
+    <div class="duel">
+      <div class="cand" id="cA"></div>
+      <div class="mid"><div class="label">Lead</div><div class="gap num" id="gap">–</div><div class="label num" id="gapv"></div></div>
+      <div class="cand right" id="cB"></div>
+    </div>
+    <div class="bar" id="natbar"></div>
+    <div class="progress">
+      <div class="label num" id="sect">Sections counted</div>
+      <div class="track"><div id="secbar" style="width:0"></div></div>
+    </div>
+    <div class="stats num" id="stats"></div>
+  </section>
+
+  <section class="geo">
+    <div class="card">
+      <div class="maphead">
+        <div class="label">Click a state</div>
+        <div class="toggle" role="group" aria-label="Map colour">
+          <button id="m-pres" aria-pressed="true">President</button>
+          <button id="m-gov" aria-pressed="false">Governor</button>
+        </div>
+      </div>
+      <svg class="map" id="map" role="img" aria-label="Map of Brazil by state"></svg>
+      <button class="abroad" id="abroad">🌍 Abroad (exterior) · <span id="abroadtxt" class="num">–</span></button>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="card panel" id="panel" aria-live="polite"></div>
+  </section>
+
+  <section class="card trend">
+    <div class="maphead">
+      <div class="label">National lead as the count advances (recorded while this page is open)</div>
+    </div>
+    <svg id="trend" viewBox="0 0 800 220" role="img" aria-label="Lead versus percent counted"></svg>
+  </section>
+
+  <section class="card">
+    <div class="maphead"><div class="label">All states · president + governor</div></div>
+    <div class="tablewrap"><table id="tbl"><thead></thead><tbody></tbody></table></div>
+  </section>
+
+  <footer>
+    Data straight from the electoral court's live feed (<a href="https://resultados.tse.jus.br/oficial/app/index.html" target="_blank" rel="noopener">resultados.tse.jus.br</a>). National count refreshes every 60 s, states and governors every 2 min. Percentages are of valid votes. Times shown in Brasília time (BRT, UTC−3) and your local time.
+  </footer>
+</div>
+
+<script id="mapdata" type="application/json">__MAP__</script>
+<script>
+const BASE = "https://resultados.tse.jus.br/oficial";
+const PRES = BASE + "/ele2026/6258/dados";           // presidential runoff
+const GOV2 = BASE + "/ele2026/6260/dados";           // governor runoff
+const GOV1 = BASE + "/ele2026/6259/dados";           // 1st round (governor), 4 Oct
+const NAT_MS = 60000, ST_MS = 120000;
+const UF = { ac:"Acre", al:"Alagoas", am:"Amazonas", ap:"Amapá", ba:"Bahia", ce:"Ceará", df:"Distrito Federal", es:"Espírito Santo", go:"Goiás", ma:"Maranhão", mg:"Minas Gerais", ms:"Mato Grosso do Sul", mt:"Mato Grosso", pa:"Pará", pb:"Paraíba", pe:"Pernambuco", pi:"Piauí", pr:"Paraná", rj:"Rio de Janeiro", rn:"Rio Grande do Norte", ro:"Rondônia", rr:"Roraima", rs:"Rio Grande do Sul", sc:"Santa Catarina", se:"Sergipe", sp:"São Paulo", to:"Tocantins", zz:"Abroad" };
+const STATES = Object.keys(UF).filter(k => k !== "zz");
+const COLOR = { "13": "var(--lula)", "22": "var(--flavio)" };
+const GOV_PALETTE = ["#0d7a4a", "#8a4fbf", "#b8860b", "#2a8a9a", "#c0567a", "#6b7a1f"];
+const MAP = JSON.parse(document.getElementById("mapdata").textContent);
+
+const state = { nat: null, uf: {}, gov2: {}, gov1: {}, runoffUF: ["ac","am","df","es","rn","to"], sel: "sp", mode: "pres", sort: "name", lastOk: null, nextAt: 0, hist: [] };
+const $ = id => document.getElementById(id);
+const num = s => s == null || s === "" ? 0 : parseFloat(String(s).replace(",", "."));
+const fmt = n => Math.round(n).toLocaleString("en-US");
+const pct = n => n.toFixed(2) + "%";
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+
+try { state.hist = JSON.parse(localStorage.getItem("tse6258-hist") || "[]"); } catch (e) { state.hist = []; }
+try { const c = JSON.parse(localStorage.getItem("tse6258-cache") || "null"); if (c) Object.assign(state, { nat: c.nat, uf: c.uf || {}, gov2: c.gov2 || {}, gov1: c.gov1 || {} }); } catch (e) {}
+try { state.sel = localStorage.getItem("tse6258-sel") || "sp"; } catch (e) {}
+
+function cands(d) {
+  const out = [];
+  if (!d || !d.carg) return out;
+  for (const a of d.carg[0].agr || []) for (const p of a.par || []) for (const c of p.cand || [])
+    out.push({ n: c.n, name: c.nmu, party: p.sg, votes: +c.vap || 0, pct: num(c.pvap), elected: c.e === "s", st: c.st || "" });
+  return out;
+}
+const byNum = d => cands(d).sort((a, b) => +a.n - +b.n);
+const byVotes = d => cands(d).sort((a, b) => b.votes - a.votes);
+function tseDate(d) {
+  if (!d || !d.dt || !d.ht) return null;
+  const [dd, mm, yy] = d.dt.split("/");
+  return new Date(`${yy}-${mm}-${dd}T${d.ht}-03:00`);
+}
+const local = dt => dt ? dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "–";
+const counted = d => d && d.s ? num(d.s.pst) : 0;
+
+async function getJSON(url) {
+  const r = await fetch(url, { cache: "no-cache" });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+// ---------- rendering ----------
+function renderHero() {
+  const d = state.nat; if (!d) return;
+  const [a, b] = byNum(d);
+  if (!a || !b) return;
+  const lead = a.votes >= b.votes ? a : b;
+  const cand = (c, el) => {
+    el.innerHTML = `<div class="name" style="color:${COLOR[c.n] || "var(--fg)"}">${esc(c.name)}</div>
+      <div class="pct num">${pct(c.pct)}</div>
+      <div class="votes num">${fmt(c.votes)} votes · ${esc(c.party)}</div>
+      <div>${c.elected ? `<span class="chip" style="background:${COLOR[c.n]}">Elected</span>` : c === lead && c.votes > 0 ? `<span class="chip" style="background:${COLOR[c.n]}">Leading</span>` : ""}</div>`;
+  };
+  cand(a, $("cA")); cand(b, $("cB"));
+  $("gap").textContent = (lead.pct - (lead === a ? b : a).pct).toFixed(2) + " pts";
+  $("gap").style.color = COLOR[lead.n];
+  $("gapv").textContent = fmt(Math.abs(a.votes - b.votes)) + " votes";
+  $("natbar").innerHTML = `<div style="width:${a.pct}%;background:${COLOR[a.n]}"></div><div style="width:${b.pct}%;background:${COLOR[b.n]}"></div>`;
+  const s = d.s, v = d.v, e = d.e;
+  $("sect").textContent = `Sections counted: ${s.pst}% (${fmt(+s.st)} of ${fmt(+s.ts)})`;
+  $("secbar").style.width = num(s.pst) + "%";
+  const tv = +v.tv || 1;
+  $("stats").innerHTML = [
+    ["Valid votes", fmt(+v.vv)],
+    ["Blank", `${fmt(+v.vb)} · ${v.pvb}%`],
+    ["Null", `${fmt(+v.tvn)} · ${v.ptvn}%`],
+    ["Turnout", `${e.pc}%`],
+    ["Abstention", `${fmt(+e.a)} · ${e.pa}%`],
+  ].map(([k, val]) => `<div class="stat"><span class="label">${k}</span><b>${val}</b></div>`).join("");
+  const final = d.tf === "s", decided = d.md === "s";
+  const st = $("status");
+  st.className = "pill " + (final || decided ? "done" : "live");
+  st.textContent = final ? "Final result" : decided ? "Mathematically decided" : "Counting";
+  const t = tseDate(d);
+  $("updated").textContent = `TSE update ${d.ht} Brasília · ${local(t)} your time`;
+}
+
+function presFill(code) {
+  const d = state.uf[code];
+  const cs = byNum(d);
+  if (cs.length < 2 || counted(d) === 0) return "var(--map-base)";
+  const [a, b] = cs, lead = a.votes >= b.votes ? a : b;
+  const m = Math.abs(a.pct - b.pct);
+  return `color-mix(in oklab, ${COLOR[lead.n] || "var(--fg)"} ${Math.round(30 + Math.min(m, 30) / 30 * 70)}%, var(--map-base))`;
+}
+function govInfo(code) {
+  const run = state.runoffUF.includes(code);
+  const d = run ? state.gov2[code] : state.gov1[code];
+  return { run, d, list: byVotes(d) };
+}
+const partyColors = {};
+function partyColor(sg) {
+  const k = (sg || "?").split(/[-\/ ]/)[0];
+  if (/^PT$/.test(k)) return "var(--lula)";
+  if (/^PL$/.test(k)) return "var(--flavio)";
+  if (!partyColors[k]) partyColors[k] = GOV_PALETTE[Object.keys(partyColors).length % GOV_PALETTE.length];
+  return partyColors[k];
+}
+function govFill(code) {
+  const { list, d } = govInfo(code);
+  if (!list.length || counted(d) === 0) return "var(--map-base)";
+  const w = list.find(c => c.elected) || list[0];
+  return `color-mix(in oklab, ${partyColor(w.party)} ${state.runoffUF.includes(code) && !w.elected ? 55 : 85}%, var(--map-base))`;
+}
+
+function renderMap() {
+  const svg = $("map");
+  if (!svg.childElementCount) {
+    svg.setAttribute("viewBox", `0 0 ${MAP.w} ${MAP.h}`);
+    let html = "";
+    for (const code of STATES) {
+      const s = MAP.s[code]; if (!s) continue;
+      html += `<path id="p-${code}" d="${s.d}" tabindex="0" aria-label="${UF[code]}"><title>${UF[code]}</title></path>`;
+    }
+    const nudge = { df: [0, -1], se: [6, 2], al: [8, 0], pb: [10, 0], pe: [0, 0], rn: [6, -2], es: [8, 2], rj: [4, 6], sc: [0, 1] };
+    for (const code of STATES) {
+      const s = MAP.s[code]; if (!s) continue;
+      if (["df", "se", "al", "pb", "rn"].includes(code)) continue;  // too small to label; hover shows the name
+      const [dx, dy] = nudge[code] || [0, 0];
+      html += `<text x="${s.c[0] + dx}" y="${s.c[1] + dy + 3}" text-anchor="middle">${code.toUpperCase()}</text>`;
+    }
+    for (const code of state.runoffUF) {
+      const s = MAP.s[code]; if (!s) continue;
+      html += `<circle class="ro" id="ro-${code}" cx="${s.c[0]}" cy="${s.c[1] - 10}" r="3.5"></circle>`;
+    }
+    svg.innerHTML = html;
+    svg.addEventListener("click", e => { const p = e.target.closest("path"); if (p) select(p.id.slice(2)); });
+    svg.addEventListener("keydown", e => { if ((e.key === "Enter" || e.key === " ") && e.target.id?.startsWith("p-")) { e.preventDefault(); select(e.target.id.slice(2)); } });
+  }
+  for (const code of STATES) {
+    const p = $("p-" + code); if (!p) continue;
+    p.style.fill = state.mode === "pres" ? presFill(code) : govFill(code);
+    p.classList.toggle("sel", state.sel === code);
+  }
+  $("abroad").classList.toggle("sel", state.sel === "zz");
+  const z = state.uf.zz, zc = byNum(z);
+  $("abroadtxt").textContent = zc.length >= 2 ? zc.map(c => `${c.name} ${pct(c.pct)}`).join(" · ") + ` · ${counted(z).toFixed(1)}% counted` : "–";
+  if (state.mode === "pres") {
+    const nc = byNum(state.nat);
+    $("legend").innerHTML = nc.map(c => `<span><i style="background:${COLOR[c.n]}"></i>${esc(c.name)} leads (darker = bigger margin)</span>`).join("") +
+      `<span><i style="background:var(--accent);border-radius:50%"></i>Governor runoff tonight</span>`;
+  } else {
+    $("legend").innerHTML = `<span>Colour = party of the elected/leading governor candidate</span><span><i style="background:var(--accent);border-radius:50%"></i>Runoff tonight (lighter = still counting)</span>`;
+  }
+}
+
+function raceRows(list, limit) {
+  const shown = list.slice(0, limit);
+  return shown.map(c => `<div class="row">
+      <div class="who">${esc(c.name)}<small>${esc(c.party)}</small> ${c.elected ? `<span class="chip" style="background:var(--accent)">${esc(c.st && c.st !== "Eleito" ? c.st : "Elected")}</span>` : ""}</div>
+      <div class="p num">${pct(c.pct)}</div>
+      <div class="meter"><div style="width:${c.pct}%;background:${partyColor(c.party)}"></div></div>
+      <div class="v num">${fmt(c.votes)} votes</div></div>`).join("");
+}
+
+function renderPanel() {
+  const code = state.sel, name = UF[code] || code;
+  const pd = state.uf[code];
+  let html = `<div><div class="label">${code === "zz" ? "Brazilians voting abroad" : "State · " + code.toUpperCase()}</div><h2>${esc(name)}</h2></div>`;
+  state._pres = true;
+  const pc = byNum(pd);
+  html += `<div class="race"><h3>President <span class="label num">${pd ? counted(pd).toFixed(2) + "% counted" : "loading"}</span></h3>`;
+  html += pc.length ? pc.map(c => `<div class="row">
+      <div class="who" style="color:${COLOR[c.n]}">${esc(c.name)} ${c.votes > 0 && c === pc.reduce((m, x) => x.votes > m.votes ? x : m) ? `<span class="chip" style="background:${COLOR[c.n]}">Leads</span>` : ""}</div>
+      <div class="p num">${pct(c.pct)}</div>
+      <div class="meter"><div style="width:${c.pct}%;background:${COLOR[c.n]}"></div></div>
+      <div class="v num">${fmt(c.votes)} votes</div></div>`).join("") : `<div class="note">No data yet.</div>`;
+  html += `</div>`;
+  state._pres = false;
+  if (code !== "zz") {
+    const g = govInfo(code);
+    if (g.run) {
+      html += `<div class="race"><h3>Governor <span class="chip" style="background:var(--accent)">Runoff tonight</span> <span class="label num">${g.d ? counted(g.d).toFixed(2) + "% counted" : "loading"}</span></h3>`;
+      html += g.list.length ? raceRows(g.list, 2) : `<div class="note">No data yet.</div>`;
+      const f = byVotes(state.gov1[code]).filter(c => c.elected);
+      if (f.length) html += `<div class="note">1st round (4 Oct): ${f.map(c => `${esc(c.name)} ${pct(c.pct)}`).join(", ")}</div>`;
+    } else {
+      html += `<div class="race"><h3>Governor <span class="label">Decided in the 1st round · 4 Oct</span></h3>`;
+      html += g.list.length ? raceRows(g.list, 4) : `<div class="note">Loading 1st-round result…</div>`;
+    }
+    html += `</div>`;
+  } else {
+    html += `<div class="note">Brazilians abroad only vote for president.</div>`;
+  }
+  $("panel").innerHTML = html;
+}
+
+function renderTrend() {
+  const svg = $("trend"), H = state.hist;
+  const W = 800, Hh = 220, L = 48, R = 16, T = 14, B = 30;
+  const nc = byNum(state.nat);
+  if (H.length < 1 || nc.length < 2) { svg.innerHTML = `<text x="${W / 2}" y="${Hh / 2}" text-anchor="middle">The line builds up with each TSE update while this page stays open.</text>`; return; }
+  const [a, b] = nc;
+  const maxAbs = Math.max(2, Math.ceil(Math.max(...H.map(h => Math.abs(h.m))) / 2) * 2);
+  const x = p => L + p / 100 * (W - L - R), y = m => T + (maxAbs - m) / (2 * maxAbs) * (Hh - T - B);
+  let g = `<defs><clipPath id="up"><rect x="0" y="0" width="${W}" height="${y(0)}"/></clipPath><clipPath id="dn"><rect x="0" y="${y(0)}" width="${W}" height="${Hh}"/></clipPath></defs>`;
+  for (const m of [maxAbs, maxAbs / 2, 0, -maxAbs / 2, -maxAbs]) {
+    g += `<line x1="${L}" x2="${W - R}" y1="${y(m)}" y2="${y(m)}" stroke="var(--line)" ${m === 0 ? 'stroke-width="1.5" stroke="var(--muted)"' : ""}/>`;
+    g += `<text x="${L - 6}" y="${y(m) + 4}" text-anchor="end">${m === 0 ? "tie" : "+" + Math.abs(m)}</text>`;
+  }
+  for (const p of [0, 25, 50, 75, 100]) g += `<text x="${x(p)}" y="${Hh - 10}" text-anchor="middle">${p}%</text>`;
+  g += `<text x="${L + 4}" y="${T + 10}" fill="${COLOR[a.n]}" style="fill:${COLOR[a.n]}">${esc(a.name)} ahead ↑</text>`;
+  g += `<text x="${L + 4}" y="${Hh - B - 6}" style="fill:${COLOR[b.n]}">${esc(b.name)} ahead ↓</text>`;
+  const pts = H.map(h => `${x(h.p).toFixed(1)},${y(h.m).toFixed(1)}`).join(" ");
+  if (H.length > 1) {
+    const area = `${x(H[0].p).toFixed(1)},${y(0)} ${pts} ${x(H[H.length - 1].p).toFixed(1)},${y(0)}`;
+    g += `<polygon points="${area}" clip-path="url(#up)" style="fill:${COLOR[a.n]};opacity:.15"/>`;
+    g += `<polygon points="${area}" clip-path="url(#dn)" style="fill:${COLOR[b.n]};opacity:.15"/>`;
+    g += `<polyline points="${pts}" fill="none" style="stroke:var(--fg)" stroke-width="2" stroke-linejoin="round"/>`;
+  }
+  const last = H[H.length - 1];
+  g += `<circle cx="${x(last.p)}" cy="${y(last.m)}" r="4.5" style="fill:${last.m >= 0 ? COLOR[a.n] : COLOR[b.n]};stroke:var(--surface)" stroke-width="2"/>`;
+  g += `<text x="${Math.min(x(last.p) + 8, W - R - 120)}" y="${y(last.m) - 8}" style="fill:var(--fg)">${last.p.toFixed(1)}% counted · ${Math.abs(last.m).toFixed(2)} pts</text>`;
+  svg.innerHTML = g;
+}
+
+function renderTable() {
+  const nc = byNum(state.nat);
+  const [a, b] = nc;
+  const head = `<tr><th data-k="name">State</th><th data-k="cnt">Counted</th>${a ? `<th data-k="a" style="color:${COLOR[a.n]}">${esc(a.name)}</th>` : ""}${b ? `<th data-k="b" style="color:${COLOR[b.n]}">${esc(b.name)}</th>` : ""}<th data-k="lead">Lead</th><th class="l" data-k="gov">Governor</th></tr>`;
+  const rows = ["zz", ...STATES].map(code => {
+    const d = state.uf[code], cs = byNum(d);
+    const ca = cs.find(c => a && c.n === a.n), cb = cs.find(c => b && c.n === b.n);
+    const m = ca && cb ? ca.pct - cb.pct : 0;
+    const g = code === "zz" ? null : govInfo(code);
+    let gov = "–";
+    if (g && g.list.length) {
+      const w = g.list.find(c => c.elected) || g.list[0];
+      gov = g.run ? `<span class="dot" style="background:var(--accent)"></span>Runoff · ${esc(w.name)} ${pct(w.pct)} (${counted(g.d).toFixed(0)}%)` : `${esc(w.name)} <span class="label">${esc(w.party)}</span>`;
+    }
+    return { code, name: UF[code], cnt: counted(d), a: ca ? ca.pct : -1, b: cb ? cb.pct : -1, m, lead: Math.abs(m), html:
+      `<tr data-c="${code}" tabindex="0" class="${state.sel === code ? "sel" : ""}"><td>${code === "zz" ? "🌍 " : ""}${esc(UF[code])}</td>
+       <td class="num">${d ? counted(d).toFixed(1) + "%" : "–"}</td>
+       <td class="num">${ca ? pct(ca.pct) : "–"}</td><td class="num">${cb ? pct(cb.pct) : "–"}</td>
+       <td class="num" style="color:${m > 0 ? COLOR[a.n] : m < 0 ? COLOR[b.n] : "inherit"}">${ca && cb && (ca.votes || cb.votes) ? (m > 0 ? a.name : b.name) + " +" + Math.abs(m).toFixed(1) : "–"}</td>
+       <td class="l">${gov}</td></tr>` };
+  });
+  const k = state.sort;
+  const abroad = rows.shift();
+  rows.sort((x, y) => k === "name" ? x.name.localeCompare(y.name) : (y[k] - x[k]));
+  $("tbl").tHead.innerHTML = head;
+  $("tbl").tBodies[0].innerHTML = [abroad, ...rows].map(r => r.html).join("");
+}
+
+function renderAll() { renderHero(); renderMap(); renderPanel(); renderTrend(); renderTable(); }
+function select(code) { state.sel = code; try { localStorage.setItem("tse6258-sel", code); } catch (e) {} renderMap(); renderPanel(); renderTable(); }
+
+$("abroad").onclick = () => select("zz");
+$("tbl").addEventListener("click", e => {
+  const th = e.target.closest("th"); if (th) { state.sort = th.dataset.k; renderTable(); return; }
+  const tr = e.target.closest("tr[data-c]"); if (tr) select(tr.dataset.c);
+});
+$("tbl").addEventListener("keydown", e => { const tr = e.target.closest("tr[data-c]"); if (tr && e.key === "Enter") select(tr.dataset.c); });
+for (const [id, mode] of [["m-pres", "pres"], ["m-gov", "gov"]]) $(id).onclick = () => {
+  state.mode = mode; $("m-pres").setAttribute("aria-pressed", mode === "pres"); $("m-gov").setAttribute("aria-pressed", mode === "gov"); renderMap();
+};
+
+// ---------- fetching ----------
+function saveCache() {
+  try { localStorage.setItem("tse6258-cache", JSON.stringify({ nat: state.nat, uf: state.uf, gov2: state.gov2, gov1: state.gov1 })); } catch (e) {}
+}
+function record(d) {
+  const [a, b] = byNum(d); if (!a || !b) return;
+  const p = counted(d), last = state.hist[state.hist.length - 1];
+  if (last && last.id === d.idg) return;
+  if (last && Math.abs(last.p - p) < 0.01 && Math.abs(last.m - (a.pct - b.pct)) < 0.001) return;
+  state.hist.push({ id: d.idg, p, m: a.pct - b.pct, t: d.ht });
+  state.hist.sort((x, y) => x.p - y.p);
+  try { localStorage.setItem("tse6258-hist", JSON.stringify(state.hist.slice(-2000))); } catch (e) {}
+}
+function showError(msg) {
+  const e = $("error");
+  if (!msg) { e.hidden = true; return; }
+  e.hidden = false;
+  e.textContent = `Couldn't reach the TSE feed (${msg}). Showing the last data received${state.lastOk ? " at " + state.lastOk.toLocaleTimeString() : ""}. Retrying automatically.`;
+  $("status").className = "pill stale"; $("status").textContent = "Stale";
+}
+
+async function pollNational() {
+  try {
+    const d = await getJSON(`${PRES}/br/br-c0001-e006258-u.json`);
+    state.nat = d; state.lastOk = new Date(); record(d); showError(null);
+    renderHero(); renderTrend(); renderMap(); renderTable(); saveCache();
+  } catch (e) { showError(e.message); }
+  state.nextAt = Date.now() + (state.nat && state.nat.tf === "s" ? NAT_MS * 10 : NAT_MS);
+  setTimeout(pollNational, state.nextAt - Date.now());
+}
+async function pollStates() {
+  const jobs = ["zz", ...STATES].map(uf => getJSON(`${PRES}/${uf}/${uf}-c0001-e006258-u.json`).then(d => { state.uf[uf] = d; }));
+  jobs.push(...state.runoffUF.map(uf => getJSON(`${GOV2}/${uf}/${uf}-c0003-e006260-u.json`).then(d => { state.gov2[uf] = d; })));
+  await Promise.allSettled(jobs);
+  renderMap(); renderPanel(); renderTable(); saveCache();
+  setTimeout(pollStates, state.nat && state.nat.tf === "s" ? ST_MS * 5 : ST_MS);
+}
+async function loadFirstRound() {
+  const need = STATES.filter(uf => !state.gov1[uf]);
+  await Promise.allSettled(need.map(uf => getJSON(`${GOV1}/${uf}/${uf}-c0003-e006259-u.json`).then(d => { state.gov1[uf] = d; })));
+  renderMap(); renderPanel(); renderTable(); saveCache();
+}
+async function loadConfig() {
+  try {
+    const cfg = await getJSON(`${BASE}/comum/config/ele-c.json`);
+    for (const p of cfg.pl) for (const e of p.e) if (e.cd === "6260") state.runoffUF = e.abr.map(x => x.cd).filter(c => UF[c]);
+  } catch (e) {}
+}
+setInterval(() => {
+  const s = Math.max(0, Math.round((state.nextAt - Date.now()) / 1000));
+  $("next").textContent = state.nextAt ? `next check in ${s}s` : "";
+}, 1000);
+
+renderAll();
+loadConfig().then(() => { renderMap(); pollNational(); pollStates(); loadFirstRound(); });
+</script>
+</body>
+</html>
