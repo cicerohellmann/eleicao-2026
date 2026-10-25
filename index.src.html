@@ -319,13 +319,14 @@ function renderMap() {
       html += `<path id="p-${code}" d="${s.d}" tabindex="0" aria-label="${UF[code]}"><title>${UF[code]}</title></path>`;
     }
     // tiny states get their label outside, with a leader line to the shape
-    const callout = { rn: [532, 146], pb: [536, 170], al: [530, 198], se: [522, 228], df: [372, 268] };
+    const callout = { rn: [524, 146], pb: [528, 170], al: [522, 198], se: [514, 228], df: [366, 272] };
     for (const code of STATES) {
       const s = MAP.s[code]; if (!s) continue;
       const [cx, cy] = s.c, [lx, ly] = callout[code] || [cx, cy - 1];
-      if (callout[code]) html += `<line class="lead" x1="${cx}" y1="${cy}" x2="${lx}" y2="${ly}"></line>`;
-      html += `<text x="${lx}" y="${ly}" text-anchor="middle">${code.toUpperCase()}</text>`;
-      html += `<text class="ap" id="ap-${code}" x="${lx}" y="${ly + 9}" text-anchor="middle"></text>`;
+      const anchor = callout[code] ? "start" : "middle";  // callout text starts where its line ends
+      if (callout[code]) html += `<line class="lead" x1="${cx}" y1="${cy}" x2="${lx - 2}" y2="${ly + 1}"></line>`;
+      html += `<text x="${lx}" y="${ly}" text-anchor="${anchor}">${code.toUpperCase()}</text>`;
+      html += `<text class="ap" id="ap-${code}" x="${lx}" y="${ly + 9}" text-anchor="${anchor}"></text>`;
     }
     for (const code of state.runoffUF) {
       const s = MAP.s[code]; if (!s) continue;
