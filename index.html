@@ -110,7 +110,11 @@ svg.map circle.ro { fill: var(--accent); stroke: var(--surface); stroke-width: 1
 
 /* Trend */
 .trend svg { width: 100%; height: auto; display: block; }
-.trend text { font: 11px var(--font-mono); fill: var(--muted); }
+.trend text { font: 12px var(--font-mono); fill: var(--muted); }
+.trend text.endname { font: 600 15px var(--font-display); letter-spacing: .03em; }
+.trend text.endval { font: 700 17px var(--font-display); }
+.trendtitle { font: 700 24px/1.1 var(--font-display); }
+#hovzone { cursor: crosshair; }
 
 /* Table */
 .tablewrap { overflow-x: auto; }
@@ -175,9 +179,10 @@ button:focus-visible, tr:focus-visible { outline: 2px solid var(--accent); outli
 
   <section class="card trend">
     <div class="maphead">
-      <div class="label">Vantagem nacional ao longo da apuração (registrada enquanto esta página está aberta)</div>
+      <div><h3 class="trendtitle">Presidente minuto a minuto</h3><div class="label">% dos votos válidos · horário de Brasília</div></div>
+      <div class="label num" id="trendsince"></div>
     </div>
-    <svg id="trend" viewBox="0 0 800 220" role="img" aria-label="Vantagem por percentual apurado"></svg>
+    <svg id="trend" viewBox="0 0 800 300" role="img" aria-label="Percentual de cada candidato ao longo da apuração"></svg>
   </section>
 
   <section class="card">
@@ -211,7 +216,7 @@ const dec = (n, d) => n.toLocaleString("pt-BR", { minimumFractionDigits: d, maxi
 const pct = n => dec(n, 2) + "%";
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
 
-try { state.hist = JSON.parse(localStorage.getItem("tse6258-hist") || "[]"); } catch (e) { state.hist = []; }
+try { state.hist = JSON.parse(localStorage.getItem("tse6258-hist2") || "[]"); } catch (e) { state.hist = []; }
 try { const c = JSON.parse(localStorage.getItem("tse6258-cache") || "null"); if (c) Object.assign(state, { nat: c.nat, uf: c.uf || {}, gov2: c.gov2 || {}, gov1: c.gov1 || {} }); } catch (e) {}
 try { state.sel = localStorage.getItem("tse6258-sel") || "sp"; } catch (e) {}
 
@@ -384,33 +389,58 @@ function renderPanel() {
   $("panel").innerHTML = html;
 }
 
+const brt = t => new Date(t).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
 function renderTrend() {
-  const svg = $("trend"), H = state.hist;
-  const W = 800, Hh = 220, L = 48, R = 16, T = 14, B = 30;
-  const nc = byNum(state.nat);
-  if (H.length < 1 || nc.length < 2) { svg.innerHTML = `<text x="${W / 2}" y="${Hh / 2}" text-anchor="middle">A linha cresce a cada atualização do TSE enquanto esta página fica aberta.</text>`; return; }
-  const [a, b] = nc;
-  const maxAbs = Math.max(2, Math.ceil(Math.max(...H.map(h => Math.abs(h.m))) / 2) * 2);
-  const x = p => L + p / 100 * (W - L - R), y = m => T + (maxAbs - m) / (2 * maxAbs) * (Hh - T - B);
-  let g = `<defs><clipPath id="up"><rect x="0" y="0" width="${W}" height="${y(0)}"/></clipPath><clipPath id="dn"><rect x="0" y="${y(0)}" width="${W}" height="${Hh}"/></clipPath></defs>`;
-  for (const m of [maxAbs, maxAbs / 2, 0, -maxAbs / 2, -maxAbs]) {
-    g += `<line x1="${L}" x2="${W - R}" y1="${y(m)}" y2="${y(m)}" stroke="var(--line)" ${m === 0 ? 'stroke-width="1.5" stroke="var(--muted)"' : ""}/>`;
-    g += `<text x="${L - 6}" y="${y(m) + 4}" text-anchor="end">${m === 0 ? "empate" : "+" + Math.abs(m)}</text>`;
+  const svg = $("trend"), H = state.hist, nc = byNum(state.nat);
+  const W = 800, Hh = 300, L = 58, R = 190, T = 14, B = 34;
+  $("trendsince").textContent = H.length ? `desde ${brt(H[0].t)} · ${H.length} atualizações do TSE` : "";
+  if (!H.length || nc.length < 2) { svg.innerHTML = `<text x="${W / 2}" y="${Hh / 2}" text-anchor="middle">Aguardando a primeira atualização do TSE…</text>`; return; }
+  const t0 = H[0].t, t1 = Math.max(H[H.length - 1].t, t0 + 20 * 60000);
+  const dev = Math.max(0.5, ...H.flatMap(h => nc.map(c => h.c[c.n] == null ? 0 : Math.abs(h.c[c.n] - 50))));
+  const step = dev <= 1 ? 0.25 : dev <= 2 ? 0.5 : dev <= 5 ? 1 : dev <= 10 ? 2.5 : 5;
+  const R0 = Math.ceil(dev * 1.08 / step) * step;
+  const x = t => L + (t - t0) / (t1 - t0) * (W - L - R);
+  const y = v => T + (50 + R0 - v) / (2 * R0) * (Hh - T - B);
+  const d2 = step < 1 ? 2 : 1;
+  let g = "";
+  for (let v = 50 - R0; v <= 50 + R0 + 1e-9; v += step) {
+    const mid = Math.abs(v - 50) < 1e-9;
+    g += `<line x1="${L}" x2="${W - R + 10}" y1="${y(v)}" y2="${y(v)}" style="stroke:${mid ? "var(--muted)" : "var(--line)"}" stroke-width="${mid ? 1.5 : 1}" ${mid ? "" : 'stroke-dasharray="4 4"'}/>`;
+    g += `<text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${dec(v, d2)}%</text>`;
   }
-  for (const p of [0, 25, 50, 75, 100]) g += `<text x="${x(p)}" y="${Hh - 10}" text-anchor="middle">${p}%</text>`;
-  g += `<text x="${L + 4}" y="${T + 10}" fill="${COLOR[a.n]}" style="fill:${COLOR[a.n]}">${esc(a.name)} na frente ↑</text>`;
-  g += `<text x="${L + 4}" y="${Hh - B - 6}" style="fill:${COLOR[b.n]}">${esc(b.name)} na frente ↓</text>`;
-  const pts = H.map(h => `${x(h.p).toFixed(1)},${y(h.m).toFixed(1)}`).join(" ");
-  if (H.length > 1) {
-    const area = `${x(H[0].p).toFixed(1)},${y(0)} ${pts} ${x(H[H.length - 1].p).toFixed(1)},${y(0)}`;
-    g += `<polygon points="${area}" clip-path="url(#up)" style="fill:${COLOR[a.n]};opacity:.15"/>`;
-    g += `<polygon points="${area}" clip-path="url(#dn)" style="fill:${COLOR[b.n]};opacity:.15"/>`;
-    g += `<polyline points="${pts}" fill="none" style="stroke:var(--fg)" stroke-width="2" stroke-linejoin="round"/>`;
+  for (let i = 0; i <= 5; i++) {
+    const t = t0 + i * (t1 - t0) / 5;
+    g += `<line x1="${x(t)}" x2="${x(t)}" y1="${Hh - B}" y2="${Hh - B + 5}" style="stroke:var(--muted)"/>`;
+    g += `<text x="${x(t)}" y="${Hh - 10}" text-anchor="middle">${brt(t)}</text>`;
   }
-  const last = H[H.length - 1];
-  g += `<circle cx="${x(last.p)}" cy="${y(last.m)}" r="4.5" style="fill:${last.m >= 0 ? COLOR[a.n] : COLOR[b.n]};stroke:var(--surface)" stroke-width="2"/>`;
-  g += `<text x="${Math.min(x(last.p) + 8, W - R - 120)}" y="${y(last.m) - 8}" style="fill:var(--fg)">${dec(last.p, 1)}% apurado · ${dec(Math.abs(last.m), 2)} p.p.</text>`;
+  const ends = [];
+  for (const c of nc) {
+    const pts = H.filter(h => h.c[c.n] != null);
+    if (!pts.length) continue;
+    g += `<polyline points="${pts.map(h => `${x(h.t).toFixed(1)},${y(h.c[c.n]).toFixed(1)}`).join(" ")}" fill="none" style="stroke:${COLOR[c.n]}" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+    const last = pts[pts.length - 1];
+    g += `<circle cx="${x(last.t)}" cy="${y(last.c[c.n])}" r="5" style="fill:${COLOR[c.n]};stroke:var(--surface)" stroke-width="2"/>`;
+    ends.push({ c, x: x(last.t), y: y(last.c[c.n]), v: last.c[c.n] });
+  }
+  ends.sort((a, b) => a.y - b.y);
+  if (ends.length === 2 && ends[1].y - ends[0].y < 34) { const m = (ends[0].y + ends[1].y) / 2; ends[0].y = m - 17; ends[1].y = m + 17; }
+  for (const e of ends) g += `<text x="${e.x + 12}" y="${e.y - 2}" class="endname" style="fill:${COLOR[e.c.n]}">${esc(e.c.name)}</text><text x="${e.x + 12}" y="${e.y + 14}" class="endval" style="fill:${COLOR[e.c.n]}">${pct(e.v)}</text>`;
+  g += `<g id="hov" style="display:none"><line id="hovl" y1="${T}" y2="${Hh - B}" style="stroke:var(--fg)" stroke-dasharray="2 3"/><rect id="hovbg" rx="4" style="fill:var(--surface);stroke:var(--line)"/><text id="hovt" style="fill:var(--fg)"></text></g>`;
+  g += `<rect x="${L}" y="${T}" width="${W - L - R}" height="${Hh - T - B}" fill="transparent" id="hovzone"/>`;
   svg.innerHTML = g;
+  const zone = $("hovzone"), hov = $("hov");
+  zone.onpointermove = ev => {
+    const r = svg.getBoundingClientRect(), vx = (ev.clientX - r.left) / r.width * W;
+    let best = H[0];
+    for (const h of H) if (Math.abs(x(h.t) - vx) < Math.abs(x(best.t) - vx)) best = h;
+    const bx = x(best.t), lines = [`${brt(best.t)} · ${dec(best.p, 2)}% apurado`, ...nc.map(c => `${c.name}: ${best.c[c.n] != null ? pct(best.c[c.n]) : "–"}`)];
+    $("hovl").setAttribute("x1", bx); $("hovl").setAttribute("x2", bx);
+    const tx = bx + 10 + 210 > W ? bx - 220 : bx + 10;
+    $("hovt").innerHTML = lines.map((l, k) => `<tspan x="${tx + 8}" y="${T + 18 + k * 16}">${esc(l)}</tspan>`).join("");
+    const bg = $("hovbg"); bg.setAttribute("x", tx); bg.setAttribute("y", T + 4); bg.setAttribute("width", 210); bg.setAttribute("height", 16 * lines.length + 8);
+    hov.style.display = "";
+  };
+  zone.onpointerleave = () => { hov.style.display = "none"; };
 }
 
 function renderTable() {
@@ -458,14 +488,21 @@ for (const [id, mode] of [["m-pres", "pres"], ["m-gov", "gov"]]) $(id).onclick =
 function saveCache() {
   try { localStorage.setItem("tse6258-cache", JSON.stringify({ nat: state.nat, uf: state.uf, gov2: state.gov2, gov1: state.gov1 })); } catch (e) {}
 }
+const HKEY = "tse6258-hist2";
+function addPoints(pts) {
+  const seen = new Map(state.hist.map(h => [h.t, h]));
+  for (const h of pts) if (h && h.t && h.c && !seen.has(h.t)) seen.set(h.t, h);
+  state.hist = [...seen.values()].sort((a, b) => a.t - b.t);
+}
 function record(d) {
-  const [a, b] = byNum(d); if (!a || !b) return;
-  const p = counted(d), last = state.hist[state.hist.length - 1];
-  if (last && last.id === d.idg) return;
-  if (last && Math.abs(last.p - p) < 0.01 && Math.abs(last.m - (a.pct - b.pct)) < 0.001) return;
-  state.hist.push({ id: d.idg, p, m: a.pct - b.pct, t: d.ht });
-  state.hist.sort((x, y) => x.p - y.p);
-  try { localStorage.setItem("tse6258-hist", JSON.stringify(state.hist.slice(-2000))); } catch (e) {}
+  const t = tseDate(d); if (!t) return;
+  const c = {}; for (const x of cands(d)) c[x.n] = x.pct;
+  addPoints([{ t: t.getTime(), p: counted(d), c }]);
+  try { localStorage.setItem(HKEY, JSON.stringify(state.hist.slice(-3000))); } catch (e) {}
+}
+// Shared history recorded by tools/record_history.py (only reachable when the page is served, not from file://).
+async function loadSharedHistory() {
+  try { const h = await getJSON("history.json?t=" + Date.now()); addPoints(h.points || []); renderTrend(); } catch (e) {}
 }
 function showError(msg) {
   const e = $("error");
@@ -487,7 +524,7 @@ async function pollNational() {
 async function pollStates() {
   const jobs = ["zz", ...STATES].map(uf => getJSON(`${PRES}/${uf}/${uf}-c0001-e006258-u.json`).then(d => { state.uf[uf] = d; }));
   jobs.push(...state.runoffUF.map(uf => getJSON(`${GOV2}/${uf}/${uf}-c0003-e006260-u.json`).then(d => { state.gov2[uf] = d; })));
-  await Promise.allSettled(jobs);
+  await Promise.allSettled([...jobs, loadSharedHistory()]);
   renderMap(); renderPanel(); renderTable(); saveCache();
   setTimeout(pollStates, state.nat && state.nat.tf === "s" ? ST_MS * 5 : ST_MS);
 }

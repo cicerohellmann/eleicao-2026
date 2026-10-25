@@ -5,7 +5,7 @@ A single-page live tracker for Brazil's 2026 runoff (25 Oct 2026). It shows:
 - **President:** the national count (Lula vs Flávio Bolsonaro) with the lead, sections counted, blank and null votes, and turnout.
 - **Map:** each state coloured by who leads for president, or by the governor race.
 - **Each state:** click one to see its presidential count and its governor race. That's the live runoff in AC, AM, DF, ES, RN and TO, and the 1st-round result (4 Oct) everywhere else.
-- **Trend:** how the national lead moves as the count advances (recorded while the page is open).
+- **Presidente minuto a minuto:** each candidate's share of valid votes over the night, from `history.json`.
 - **Table:** a sortable list of every state, plus votes from abroad.
 
 **Live:** https://cicerohellmann.github.io/eleicao-2026/
@@ -24,6 +24,10 @@ Feed paths used (`https://resultados.tse.jus.br/oficial/`):
 | Governor, 1st round | `ele2026/6259/dados/{uf}/{uf}-c0003-e006259-u.json` |
 
 You can also open `index.html` directly from disk, with no server.
+
+## Night history
+
+`tools/record_history.py` polls the national feed every minute, appends each new TSE update to `history.json`, and pushes it every few minutes. It stops by itself once the count is final. The page merges that shared history with whatever the visitor's own browser recorded. When opened from disk, it only shows the browser's own history.
 
 ## Editing
 
