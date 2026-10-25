@@ -89,6 +89,8 @@ svg.map path { stroke: var(--surface); stroke-width: 1; cursor: pointer; transit
 svg.map path:hover, svg.map path:focus { stroke: var(--fg); stroke-width: 1.6; outline: none; }
 svg.map path.sel { stroke: var(--fg); stroke-width: 2.4; }
 svg.map text { font: 600 9px var(--font-mono); fill: var(--fg); pointer-events: none; paint-order: stroke; stroke: var(--surface); stroke-width: 2.5px; }
+svg.map text.ap { font-size: 7.5px; font-weight: 500; opacity: .85; }
+svg.map line.lead { stroke: var(--fg); stroke-width: .6; opacity: .6; pointer-events: none; }
 svg.map circle.ro { fill: var(--accent); stroke: var(--surface); stroke-width: 1.5; pointer-events: none; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font: 12px var(--font-mono); color: var(--muted); margin-top: 8px; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
@@ -316,16 +318,18 @@ function renderMap() {
       const s = MAP.s[code]; if (!s) continue;
       html += `<path id="p-${code}" d="${s.d}" tabindex="0" aria-label="${UF[code]}"><title>${UF[code]}</title></path>`;
     }
-    const nudge = { df: [0, -1], se: [6, 2], al: [8, 0], pb: [10, 0], pe: [0, 0], rn: [6, -2], es: [8, 2], rj: [4, 6], sc: [0, 1] };
+    // tiny states get their label outside, with a leader line to the shape
+    const callout = { rn: [532, 146], pb: [536, 170], al: [530, 198], se: [522, 228], df: [372, 268] };
     for (const code of STATES) {
       const s = MAP.s[code]; if (!s) continue;
-      if (["df", "se", "al", "pb", "rn"].includes(code)) continue;  // too small to label; hover shows the name
-      const [dx, dy] = nudge[code] || [0, 0];
-      html += `<text x="${s.c[0] + dx}" y="${s.c[1] + dy + 3}" text-anchor="middle">${code.toUpperCase()}</text>`;
+      const [cx, cy] = s.c, [lx, ly] = callout[code] || [cx, cy - 1];
+      if (callout[code]) html += `<line class="lead" x1="${cx}" y1="${cy}" x2="${lx}" y2="${ly}"></line>`;
+      html += `<text x="${lx}" y="${ly}" text-anchor="middle">${code.toUpperCase()}</text>`;
+      html += `<text class="ap" id="ap-${code}" x="${lx}" y="${ly + 9}" text-anchor="middle"></text>`;
     }
     for (const code of state.runoffUF) {
       const s = MAP.s[code]; if (!s) continue;
-      html += `<circle class="ro" id="ro-${code}" cx="${s.c[0]}" cy="${s.c[1] - 10}" r="3.5"></circle>`;
+      html += `<circle class="ro" id="ro-${code}" cx="${s.c[0]}" cy="${s.c[1] - (callout[code] ? 0 : 13)}" r="3.5"></circle>`;
     }
     svg.innerHTML = html;
     svg.addEventListener("click", e => { const p = e.target.closest("path"); if (p) select(p.id.slice(2)); });
@@ -335,6 +339,9 @@ function renderMap() {
     const p = $("p-" + code); if (!p) continue;
     p.style.fill = state.mode === "pres" ? presFill(code) : govFill(code);
     p.classList.toggle("sel", state.sel === code);
+    const d = state.uf[code], ap = d && d.s ? (counted(d) >= 100 ? "100%" : dec(counted(d), 1) + "%") : "";
+    const lbl = $("ap-" + code); if (lbl) lbl.textContent = ap;
+    p.firstChild.textContent = UF[code] + (ap ? ` · ${ap} apurado` : "");
   }
   $("abroad").classList.toggle("sel", state.sel === "zz");
   const z = state.uf.zz, zc = byNum(z);
