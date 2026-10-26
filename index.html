@@ -67,6 +67,10 @@ header h1 span { color: var(--muted); font-weight: 500; }
 .cand .votes { font: 14px var(--font-mono); color: var(--muted); }
 .chip { display: inline-block; font: 600 11px var(--font-mono); letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; color: var(--bg); }
 .mid { text-align: center; padding-bottom: 6px; }
+.win { padding: 14px 16px; border-radius: 8px; border-left: 6px solid currentColor; background: color-mix(in oklab, currentColor 14%, var(--surface)); }
+.win b { display: block; font: 700 clamp(30px, 6vw, 48px)/1 var(--font-display); text-transform: uppercase; }
+.win span { display: block; margin-top: 4px; color: var(--fg); font: 600 13px var(--font-mono); letter-spacing: .04em; text-transform: uppercase; }
+.cand.lost { opacity: .5; }
 .mid .gap { font: 700 26px/1 var(--font-display); }
 .bar { position: relative; height: 22px; border-radius: 4px; overflow: hidden; display: flex; background: var(--map-base); }
 .bar > div { height: 100%; transition: width .6s ease; }
@@ -150,6 +154,7 @@ button:focus-visible, tr:focus-visible { outline: 2px solid var(--accent); outli
 
   <section class="card hero" aria-label="Apuração nacional para presidente">
     <div class="label">Presidente · Brasil (inclui exterior)</div>
+    <div class="win" id="win" hidden></div>
     <div class="duel">
       <div class="cand" id="cA"></div>
       <div class="mid"><div class="label">Vantagem</div><div class="gap num" id="gap">–</div><div class="label num" id="gapv"></div></div>
@@ -254,15 +259,25 @@ function renderHero() {
   const d = state.nat; if (!d) return;
   const [a, b] = byNum(d);
   if (!a || !b) return;
-  const lead = a.votes >= b.votes ? a : b;
+  const lead = a.votes >= b.votes ? a : b, trail = lead === a ? b : a;
+  const final = d.tf === "s", decided = d.md === "s", official = lead.elected || final;
+  const won = renderCalc(d, lead, trail) || official || decided;
+  const win = $("win");
+  win.hidden = !won;
+  if (won) {
+    win.style.color = COLOR[lead.n];
+    win.innerHTML = `<b>${esc(lead.name)} venceu</b><span>${official ? "Eleito presidente do Brasil · confirmado pelo TSE" : "Vitória matematicamente garantida · o TSE ainda não declarou oficialmente"}</span>`;
+  }
+  const chip = c => c.elected ? "Eleito" : won && c === lead ? (official ? "Eleito" : "Vitória garantida") : !won && c === lead && c.votes > 0 ? "Na frente" : "";
   const cand = (c, el) => {
+    el.classList.toggle("lost", won && c !== lead);
     el.innerHTML = `<div class="name" style="color:${COLOR[c.n] || "var(--fg)"}">${esc(c.name)}</div>
       <div class="pct num">${pct(c.pct)}</div>
       <div class="votes num">${fmt(c.votes)} votos · ${esc(c.party)}</div>
-      <div>${c.elected ? `<span class="chip" style="background:${COLOR[c.n]}">Eleito</span>` : c === lead && c.votes > 0 ? `<span class="chip" style="background:${COLOR[c.n]}">Na frente</span>` : ""}</div>`;
+      <div>${chip(c) ? `<span class="chip" style="background:${COLOR[c.n]}">${chip(c)}</span>` : ""}</div>`;
   };
   cand(a, $("cA")); cand(b, $("cB"));
-  $("gap").textContent = dec(lead.pct - (lead === a ? b : a).pct, 2) + " p.p.";
+  $("gap").textContent = dec(lead.pct - trail.pct, 2) + " p.p.";
   $("gap").style.color = COLOR[lead.n];
   $("gapv").textContent = fmt(Math.abs(a.votes - b.votes)) + " votos";
   $("natbar").innerHTML = `<div style="width:${a.pct}%;background:${COLOR[a.n]}"></div><div style="width:${b.pct}%;background:${COLOR[b.n]}"></div>`;
@@ -277,11 +292,9 @@ function renderHero() {
     ["Comparecimento", `${e.pc}%`],
     ["Abstenção", `${fmt(+e.a)} · ${e.pa}%`],
   ].map(([k, val]) => `<div class="stat"><span class="label">${k}</span><b>${val}</b></div>`).join("");
-  renderCalc(d, lead, lead === a ? b : a);
-  const final = d.tf === "s", decided = d.md === "s";
   const st = $("status");
-  st.className = "pill " + (final || decided ? "done" : "live");
-  st.textContent = final ? "Resultado final" : decided ? "Matematicamente definido" : "Apurando";
+  st.className = "pill " + (final || won ? "done" : "live");
+  st.textContent = final ? "Resultado final" : won ? "Matematicamente definido" : "Apurando";
   const t = tseDate(d);
   $("updated").textContent = `Atualização do TSE ${d.ht} (Brasília) · ${local(t)} no seu horário`;
 }
@@ -297,6 +310,7 @@ function renderCalc(d, lead, trail) {
     : `Para a vitória ser garantida, a vantagem (${fmt(margin)}) precisa passar os eleitores que faltam apurar (${fmt(left)})`;
   $("mathbar").style.width = (sure ? 100 : Math.max(0, margin / left * 100)) + "%";
   $("mathbar").style.background = COLOR[lead.n];
+  return sure;
 }
 
 function presFill(code) {
