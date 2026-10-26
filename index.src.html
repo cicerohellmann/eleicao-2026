@@ -391,10 +391,10 @@ function renderMap() {
   $("abroadtxt").textContent = zc.length >= 2 ? zc.map(c => `${c.name} ${pct(c.pct)}`).join(" · ") + ` · ${dec(counted(z), 1)}% apurado` : "–";
   if (state.mode === "pres") {
     const nc = byNum(state.nat);
-    $("legend").innerHTML = nc.map(c => `<span><i style="background:${COLOR[c.n]}"></i>${esc(c.name)} na frente (mais escuro = maior vantagem)</span>`).join("") +
+    $("legend").innerHTML = nc.map(c => `<span><i style="background:${COLOR[c.n]}"></i>${esc(c.name)} na frente (cor mais forte = maior vantagem)</span>`).join("") +
       `<span><i style="background:var(--accent);border-radius:50%"></i>2º turno para governador hoje</span>`;
   } else {
-    $("legend").innerHTML = `<span>Cor = partido do governador eleito ou na frente</span><span><i style="background:var(--accent);border-radius:50%"></i>2º turno hoje (mais claro = ainda apurando)</span>`;
+    $("legend").innerHTML = `<span>Cor = partido do governador eleito ou na frente</span><span><i style="background:var(--accent);border-radius:50%"></i>2º turno hoje (cor mais fraca = ainda apurando)</span>`;
   }
 }
 
