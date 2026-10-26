@@ -29,6 +29,8 @@ You can also open `index.html` directly from disk, with no server.
 
 `tools/record_history.py` polls the national feed every minute, appends each new TSE update to `history.json`, and pushes it every few minutes. It stops by itself once the count is final. The page merges that shared history with whatever the visitor's own browser recorded. When opened from disk, it only shows the browser's own history.
 
+`tools/build_replay.py` condenses the night's local recordings (`archive/`, not in git) into `replay.json`. The page's "Reviver a apuração" button plays the count back: the national numbers from 20:08 BRT (votes from 21:16), the state map from 21:14, with a slider, key moments and a GIF export (encoded in the browser with [gifenc](https://github.com/mattdesl/gifenc)).
+
 ## Editing
 
 Edit `index.src.html`, then run `python3 tools/build.py`. That rebuilds `index.html` with the map outlines from `brmap.json` inlined. `tools/geo2svg.py` regenerates `brmap.json` from a states GeoJSON.

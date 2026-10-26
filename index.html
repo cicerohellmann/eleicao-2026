@@ -134,6 +134,20 @@ tbody tr.sel { background: var(--bg); box-shadow: inset 3px 0 var(--fg); }
 td .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
 footer { font-size: 12px; color: var(--muted); }
 footer a { color: inherit; }
+/* Replay */
+[hidden] { display: none !important; }
+.rpbtn { font: 600 12px var(--font-mono); letter-spacing: .04em; text-transform: uppercase; padding: 4px 12px; border-radius: 99px; border: 1px solid var(--fg); background: var(--fg); color: var(--bg); cursor: pointer; }
+.replay { display: grid; gap: 10px; }
+.rprow { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.rprow input[type=range] { flex: 1 1 220px; accent-color: var(--fg); }
+.rprow button, .rprow select { font: 500 12px var(--font-mono); padding: 5px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); cursor: pointer; }
+.rprow button:disabled { cursor: progress; opacity: .7; }
+#rp-play { min-width: 44px; background: var(--fg); color: var(--bg); border-color: var(--fg); }
+#rp-time { font: 700 24px/1 var(--font-display); }
+.rpmarks { display: flex; flex-wrap: wrap; gap: 6px; }
+.rpmarks button { font: 12px var(--font-mono); padding: 3px 9px; border: 1px solid var(--line); border-radius: 99px; background: transparent; color: var(--muted); cursor: pointer; }
+.rpmarks button.on { color: var(--fg); border-color: var(--fg); }
+body.exporting * { transition: none !important; }
 button:focus-visible, tr:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 </style>
 </head>
@@ -145,12 +159,26 @@ button:focus-visible, tr:focus-visible { outline: 2px solid var(--accent); outli
       <h1>Apuração ao vivo <span>· Presidente e governadores</span></h1>
     </div>
     <div class="meta">
+      <button id="rp-open" class="rpbtn" hidden>▶ Reviver a apuração</button>
       <span id="status" class="pill live">Carregando</span>
       <span id="updated">Aguardando o TSE…</span>
       <span id="next"></span>
     </div>
   </header>
   <div id="error" class="err" hidden></div>
+
+  <section class="card replay" id="replay" hidden aria-label="Reprise da apuração">
+    <div class="rprow">
+      <button id="rp-play" aria-label="Reproduzir">▶</button>
+      <span id="rp-time" class="num">–</span>
+      <input type="range" id="rp-slider" min="0" max="0" value="0" aria-label="Momento da apuração">
+      <select id="rp-speed" aria-label="Velocidade"><option value="1">1×</option><option value="2" selected>2×</option><option value="4">4×</option></select>
+      <button id="rp-gif">Baixar GIF</button>
+      <button id="rp-close">Sair da reprise</button>
+    </div>
+    <div class="rpmarks" id="rp-marks"></div>
+    <div class="note" id="rp-note"></div>
+  </section>
 
   <section class="card hero" aria-label="Apuração nacional para presidente">
     <div class="label">Presidente · Brasil (inclui exterior)</div>
@@ -165,7 +193,7 @@ button:focus-visible, tr:focus-visible { outline: 2px solid var(--accent); outli
       <div class="label num" id="sect">Seções totalizadas</div>
       <div class="track"><div id="secbar" style="width:0"></div></div>
     </div>
-    <div class="progress">
+    <div class="progress" id="mathrow">
       <div class="label num" id="mathlbl"></div>
       <div class="track"><div id="mathbar" style="width:0"></div></div>
     </div>
@@ -269,33 +297,34 @@ function renderHero() {
   const d = state.nat; if (!d) return;
   const [a, b] = byNum(d);
   if (!a || !b) return;
-  const lead = a.votes >= b.votes ? a : b, trail = lead === a ? b : a;
+  // replay frames from before 21:16 (d.partial) carry only percentages: no votes, no math
+  const lead = (a.votes - b.votes || a.pct - b.pct) >= 0 ? a : b, trail = lead === a ? b : a;
   const final = d.tf === "s", decided = d.md === "s", official = lead.elected || final;
-  const won = renderCalc(d, lead, trail) || official || decided;
+  const won = !d.partial && (renderCalc(d, lead, trail) || official || decided);
+  $("mathrow").hidden = !!d.partial;
   const win = $("win");
   win.hidden = !won;
   if (won) {
     win.style.color = COLOR[lead.n];
     win.innerHTML = `<b>${esc(lead.name)} venceu</b><span>${official ? "Eleito presidente do Brasil · confirmado pelo TSE" : "Vitória matematicamente garantida · o TSE ainda não declarou oficialmente"}</span>`;
   }
-  const chip = c => c.elected ? "Eleito" : won && c === lead ? (official ? "Eleito" : "Vitória garantida") : !won && c === lead && c.votes > 0 ? "Na frente" : "";
+  const chip = c => c.elected ? "Eleito" : won && c === lead ? (official ? "Eleito" : "Vitória garantida") : !won && c === lead && c.pct > 0 ? "Na frente" : "";
   const cand = (c, el) => {
     el.classList.toggle("lost", won && c !== lead);
     el.innerHTML = `<div class="name" style="color:${COLOR[c.n] || "var(--fg)"}">${esc(c.name)}</div>
       <div class="pct num">${pct(c.pct)}</div>
-      <div class="votes num">${fmt(c.votes)} votos · ${esc(c.party)}</div>
+      <div class="votes num">${d.partial ? "" : fmt(c.votes) + " votos · "}${esc(c.party)}</div>
       <div>${chip(c) ? `<span class="chip" style="background:${COLOR[c.n]}">${chip(c)}</span>` : ""}</div>`;
   };
   cand(a, $("cA")); cand(b, $("cB"));
   $("gap").textContent = dec(lead.pct - trail.pct, 2) + " p.p.";
   $("gap").style.color = COLOR[lead.n];
-  $("gapv").textContent = fmt(Math.abs(a.votes - b.votes)) + " votos";
+  $("gapv").textContent = d.partial ? "" : fmt(Math.abs(a.votes - b.votes)) + " votos";
   $("natbar").innerHTML = `<div style="width:${a.pct}%;background:${COLOR[a.n]}"></div><div style="width:${b.pct}%;background:${COLOR[b.n]}"></div>`;
   const s = d.s, v = d.v, e = d.e;
-  $("sect").textContent = `Seções totalizadas: ${s.pst}% (${fmt(+s.st)} de ${fmt(+s.ts)})`;
+  $("sect").textContent = `Seções totalizadas: ${s.pst}%` + (s.ts ? ` (${fmt(+s.st)} de ${fmt(+s.ts)})` : "");
   $("secbar").style.width = num(s.pst) + "%";
-  const tv = +v.tv || 1;
-  $("stats").innerHTML = [
+  $("stats").innerHTML = d.partial ? "" : [
     ["Votos válidos", fmt(+v.vv)],
     ["Brancos", `${fmt(+v.vb)} · ${v.pvb}%`],
     ["Nulos", `${fmt(+v.tvn)} · ${v.ptvn}%`],
@@ -306,6 +335,7 @@ function renderHero() {
   st.className = "pill " + (final || won ? "done" : "live");
   st.textContent = final ? "Resultado final" : won ? "Matematicamente definido" : "Apurando";
   const t = tseDate(d);
+  if (state.replay) { st.className = "pill done"; st.textContent = "Reprise"; $("updated").textContent = `Dados do TSE às ${d.ht.slice(0, 5)} (Brasília)`; return; }
   $("updated").textContent = `Atualização do TSE ${d.ht} (Brasília) · ${local(t)} no seu horário` + (state.archived ? " · cópia arquivada no GitHub" : "");
 }
 
@@ -413,7 +443,7 @@ function renderPanel() {
   let html = `<div><div class="label">${code === "zz" ? "Brasileiros votando no exterior" : "Estado · " + code.toUpperCase()}</div><h2>${esc(name)}</h2></div>`;
   state._pres = true;
   const pc = byNum(pd);
-  html += `<div class="race"><h3>Presidente <span class="label num">${pd ? dec(counted(pd), 2) + "% apurado" : "carregando"}</span></h3>`;
+  html += `<div class="race"><h3>Presidente <span class="label num">${pd ? dec(counted(pd), 2) + "% apurado" : state.replay ? "sem dados gravados" : "carregando"}</span></h3>`;
   html += pc.length ? pc.map(c => `<div class="row">
       <div class="who" style="color:${COLOR[c.n]}">${esc(c.name)} ${c.votes > 0 && c === pc.reduce((m, x) => x.votes > m.votes ? x : m) ? `<span class="chip" style="background:${COLOR[c.n]}">Na frente</span>` : ""}</div>
       <div class="p num">${pct(c.pct)}</div>
@@ -441,12 +471,12 @@ function renderPanel() {
 
 const brt = t => new Date(t).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
 function renderTrend() {
-  const svg = $("trend"), H = state.hist, nc = byNum(state.nat);
+  const svg = $("trend"), RS = state.replay, H = RS ? RS.hist : state.hist, nc = byNum(state.nat);
   const W = 800, Hh = 300, L = 58, R = 190, T = 14, B = 34;
-  $("trendsince").textContent = H.length ? `desde ${brt(H[0].t)} · ${H.length} atualizações do TSE` : "";
+  $("trendsince").textContent = RS ? `reprise · ${brt(RS.t)}` : H.length ? `desde ${brt(H[0].t)} · ${H.length} atualizações do TSE` : "";
   if (!H.length || nc.length < 2) { svg.innerHTML = `<text x="${W / 2}" y="${Hh / 2}" text-anchor="middle">Aguardando a primeira atualização do TSE…</text>`; return; }
-  const t0 = H[0].t, t1 = Math.max(H[H.length - 1].t, t0 + 20 * 60000);
-  const dev = Math.max(0.5, ...H.flatMap(h => nc.map(c => h.c[c.n] == null ? 0 : Math.abs(h.c[c.n] - 50))));
+  const t0 = RS ? RS.dom.t0 : H[0].t, t1 = RS ? RS.dom.t1 : Math.max(H[H.length - 1].t, t0 + 20 * 60000);
+  const dev = RS ? RS.dom.dev : Math.max(0.5, ...H.flatMap(h => nc.map(c => h.c[c.n] == null ? 0 : Math.abs(h.c[c.n] - 50))));
   const step = dev <= 1 ? 0.25 : dev <= 2 ? 0.5 : dev <= 5 ? 1 : dev <= 10 ? 2.5 : 5;
   const R0 = Math.ceil(dev * 1.08 / step) * step;
   const x = t => L + (t - t0) / (t1 - t0) * (W - L - R);
@@ -536,6 +566,7 @@ for (const [id, mode] of [["m-pres", "pres"], ["m-gov", "gov"]]) $(id).onclick =
 
 // ---------- fetching ----------
 function saveCache() {
+  if (state.replay) return;
   try { localStorage.setItem("tse6258-cache", JSON.stringify({ nat: state.nat, uf: state.uf, gov2: state.gov2, gov1: state.gov1 })); } catch (e) {}
 }
 const HKEY = "tse6258-hist2";
@@ -565,17 +596,18 @@ function showError(msg) {
 async function pollNational() {
   try {
     const d = await getJSON(`${PRES}/br/br-c0001-e006258-u.json`);
-    state.nat = d; state.lastOk = new Date(); record(d); showError(null);
-    renderHero(); renderTrend(); renderMap(); renderTable(); saveCache();
-  } catch (e) { showError(e.message); }
+    if (state.replay) RP.live.nat = d;
+    else { state.nat = d; state.lastOk = new Date(); record(d); showError(null); renderHero(); renderTrend(); renderMap(); renderTable(); saveCache(); }
+  } catch (e) { if (!state.replay) showError(e.message); }
   state.nextAt = Date.now() + (state.nat && state.nat.tf === "s" ? NAT_MS * 10 : NAT_MS);
   setTimeout(pollNational, state.nextAt - Date.now());
 }
 async function pollStates() {
-  const jobs = ["zz", ...STATES].map(uf => getJSON(`${PRES}/${uf}/${uf}-c0001-e006258-u.json`).then(d => { state.uf[uf] = d; }));
-  jobs.push(...state.runoffUF.map(uf => getJSON(`${GOV2}/${uf}/${uf}-c0003-e006260-u.json`).then(d => { state.gov2[uf] = d; })));
+  const live = () => state.replay ? RP.live : state;
+  const jobs = ["zz", ...STATES].map(uf => getJSON(`${PRES}/${uf}/${uf}-c0001-e006258-u.json`).then(d => { live().uf[uf] = d; }));
+  jobs.push(...state.runoffUF.map(uf => getJSON(`${GOV2}/${uf}/${uf}-c0003-e006260-u.json`).then(d => { live().gov2[uf] = d; })));
   await Promise.allSettled([...jobs, loadSharedHistory()]);
-  renderMap(); renderPanel(); renderTable(); saveCache();
+  if (!state.replay) { renderMap(); renderPanel(); renderTable(); saveCache(); }
   setTimeout(pollStates, state.nat && state.nat.tf === "s" ? ST_MS * 5 : ST_MS);
 }
 async function loadFirstRound() {
@@ -589,13 +621,197 @@ async function loadConfig() {
     for (const p of cfg.pl) for (const e of p.e) if (e.cd === "6260") state.runoffUF = e.abr.map(x => x.cd).filter(c => UF[c]);
   } catch (e) {}
 }
+// ---------- replay ----------
+// replay.json (tools/build_replay.py) holds the night's TSE files, trimmed. A replay frame is
+// drawn by the same renderers as live data; the live state is set aside and restored on exit.
+let RP = null, rpTimer = null;
+const pctMap = f => { const c = {}; for (const a of f.carg[0].agr) for (const p of a.par) for (const x of p.cand) c[x.n] = num(x.pvapn || x.pvap); return c; };
+async function loadReplay() {
+  try { RP = await fetchJSON("replay.json"); } catch (e) { return; }
+  RP.series = RP.nat.map(f => ({ t: f.t, p: num(f.s.pstn || f.s.pst), c: pctMap(f) }));
+  const dev = Math.max(0.5, ...RP.series.flatMap(h => Object.values(h.c).map(v => Math.abs(v - 50))));
+  RP.dom = { t0: RP.series[0].t, t1: RP.series[RP.series.length - 1].t, dev };
+  RP.marks = replayMarks();
+  $("rp-slider").max = RP.nat.length - 1;
+  $("rp-marks").innerHTML = RP.marks.map((m, k) => `<button data-k="${k}">${brt(RP.nat[m.i].t)} · ${esc(m.label)}</button>`).join("");
+  $("rp-open").hidden = false;
+}
+// key moments, read from the data
+function replayMarks() {
+  const n = RP.nat.length, leader = i => { const c = RP.series[i].c; return Object.keys(c).sort((x, y) => c[y] - c[x])[0]; };
+  const name = k => (cands(RP.nat[n - 1]).find(c => c.n === k) || {}).name;
+  const out = [{ i: 0, label: `${dec(RP.series[0].p, 0)}% apurado` }];
+  for (let i = 1; i < n; i++) if (leader(i) !== leader(i - 1)) out.push({ i, label: `${name(leader(i))} na frente` });
+  const sure = RP.nat.findIndex(f => { if (f.partial) return false; const [a, b] = cands(f); return Math.abs(a.votes - b.votes) > (+f.e.esnt || 0); });
+  if (sure >= 0) out.push({ i: sure, label: "vitória garantida" });
+  const fin = RP.nat.findIndex(f => f.tf === "s");
+  if (fin >= 0) out.push({ i: fin, label: "resultado final" });
+  return out;
+}
+function rpShow(i) {
+  const f = RP.nat[i];
+  let s = null;
+  for (const x of RP.states) if (x.t <= f.t) s = x;
+  state.nat = f; state.uf = s ? s.uf : {}; state.gov2 = s ? s.gov2 : {};
+  state.replay = { t: f.t, hist: RP.series.slice(0, i + 1), dom: RP.dom };
+  RP.i = i;
+  $("rp-slider").value = i;
+  $("rp-time").textContent = brt(f.t);
+  $("rp-note").textContent = [f.partial && "Votos absolutos e o cálculo da vitória foram gravados só a partir de 21:16.", !s && "O mapa por estado foi gravado só a partir de 21:14."].filter(Boolean).join(" ");
+  const on = RP.marks.reduce((k, m, j) => m.i <= i ? j : k, 0);
+  $("rp-marks").querySelectorAll("button").forEach((b, j) => b.classList.toggle("on", j === on));
+  renderAll();
+}
+function rpPlay(on) {
+  clearTimeout(rpTimer); rpTimer = null;
+  $("rp-play").textContent = on ? "❚❚" : "▶";
+  $("rp-play").setAttribute("aria-label", on ? "Pausar" : "Reproduzir");
+  if (!on) return;
+  if (RP.i >= RP.nat.length - 1) rpShow(0);
+  const tick = () => {
+    if (RP.i >= RP.nat.length - 1) return rpPlay(false);
+    rpShow(RP.i + 1);
+    rpTimer = setTimeout(tick, 700 / +$("rp-speed").value);
+  };
+  rpTimer = setTimeout(tick, 700 / +$("rp-speed").value);
+}
+function rpOpen() {
+  RP.live = { nat: state.nat, uf: state.uf, gov2: state.gov2 };
+  $("replay").hidden = false; $("rp-open").hidden = true; $("next").textContent = "";
+  rpShow(0); rpPlay(true);
+}
+function rpClose() {
+  rpPlay(false);
+  Object.assign(state, RP.live); state.replay = null;
+  $("replay").hidden = true; $("rp-open").hidden = false;
+  renderAll();
+}
+$("rp-open").onclick = rpOpen;
+$("rp-close").onclick = rpClose;
+$("rp-play").onclick = () => rpPlay(!rpTimer);
+$("rp-slider").oninput = e => { rpPlay(false); rpShow(+e.target.value); };
+$("rp-marks").onclick = e => { const b = e.target.closest("button"); if (b) { rpPlay(false); rpShow(RP.marks[+b.dataset.k].i); } };
+$("rp-gif").onclick = () => rpGif().catch(e => { $("rp-gif").textContent = "Erro no GIF"; console.error(e); });
+
+// ---------- GIF export ----------
+// Each frame is drawn on a canvas from what the page shows (map and chart SVGs, hero texts),
+// then encoded with gifenc. Pixels unchanged since the previous frame are left transparent.
+function drawSVG(ctx, svg, x, y, w) {
+  const vb = svg.viewBox.baseVal, k = w / vb.width, A = (el, n) => +el.getAttribute(n);
+  ctx.save(); ctx.translate(x, y); ctx.scale(k, k); ctx.translate(-vb.x, -vb.y);
+  for (const el of svg.querySelectorAll("path, line, polyline, circle, text")) {
+    if (el.closest("#hov")) continue;
+    const st = getComputedStyle(el), fill = st.fill, stroke = st.stroke, sw = parseFloat(st.strokeWidth) || 0;
+    ctx.globalAlpha = +st.opacity;
+    ctx.setLineDash(st.strokeDasharray === "none" ? [] : st.strokeDasharray.split(/[\s,]+/).map(parseFloat));
+    ctx.lineWidth = sw; ctx.lineJoin = "round"; ctx.lineCap = st.strokeLinecap;
+    ctx.fillStyle = fill; ctx.strokeStyle = stroke;
+    if (el.tagName === "text") {
+      const t = el.textContent; if (!t) continue;
+      ctx.font = `${st.fontWeight} ${st.fontSize} ${st.fontFamily}`;
+      ctx.textAlign = { middle: "center", end: "right" }[el.getAttribute("text-anchor")] || "left";
+      if (stroke !== "none" && sw) ctx.strokeText(t, A(el, "x"), A(el, "y"));
+      if (fill !== "none") ctx.fillText(t, A(el, "x"), A(el, "y"));
+      continue;
+    }
+    let p;
+    if (el.tagName === "path") p = new Path2D(el.getAttribute("d"));
+    else if (el.tagName === "circle") { p = new Path2D(); p.arc(A(el, "cx"), A(el, "cy"), A(el, "r"), 0, 2 * Math.PI); }
+    else {
+      p = new Path2D();
+      const pts = el.tagName === "line" ? [[A(el, "x1"), A(el, "y1")], [A(el, "x2"), A(el, "y2")]] : el.getAttribute("points").trim().split(/\s+/).map(q => q.split(",").map(Number));
+      pts.forEach(([px, py], j) => j ? p.lineTo(px, py) : p.moveTo(px, py));
+    }
+    if (fill !== "none" && el.tagName !== "line" && el.tagName !== "polyline") ctx.fill(p);
+    if (stroke !== "none" && sw) ctx.stroke(p);
+  }
+  ctx.restore();
+  ctx.globalAlpha = 1; ctx.setLineDash([]);
+}
+function drawFrame(ctx, W, H) {
+  const cs = getComputedStyle(document.documentElement), v = k => cs.getPropertyValue(k).trim();
+  const col = c => c.startsWith("var(") ? v(c.slice(4, -1)) : c;
+  const FD = v("--font-display"), FM = v("--font-mono"), d = state.nat, [a, b] = byNum(d);
+  ctx.fillStyle = v("--surface"); ctx.fillRect(0, 0, W, H);
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = v("--muted"); ctx.font = `500 14px ${FM}`;
+  ctx.textAlign = "left"; ctx.fillText("PRESIDENTE · 2º TURNO · 25 OUT. 2026", 24, 32);
+  ctx.textAlign = "right"; ctx.fillText(`${dec(counted(d), 2)}% APURADO`, W - 24, 32);
+  ctx.fillStyle = v("--fg"); ctx.font = `700 30px ${FD}`; ctx.textAlign = "center"; ctx.fillText(`${d.ht.slice(0, 5)} · Brasília`, W / 2, 36);
+  for (const [c, x, al] of [[a, 24, "left"], [b, W - 24, "right"]]) {
+    ctx.textAlign = al; ctx.fillStyle = col(COLOR[c.n]);
+    ctx.font = `600 24px ${FD}`; ctx.fillText(c.name.toUpperCase(), x, 74);
+    ctx.font = `700 64px ${FD}`; ctx.fillText(pct(c.pct), x, 132);
+  }
+  const win = $("win");
+  ctx.textAlign = "center";
+  if (!win.hidden) {
+    ctx.fillStyle = win.style.color ? col(win.style.color) : v("--fg");
+    ctx.font = `700 40px ${FD}`; ctx.fillText(win.querySelector("b").textContent.toUpperCase(), W / 2, 110);
+    ctx.fillStyle = v("--muted"); ctx.font = `500 12px ${FM}`; ctx.fillText(win.querySelector("span").textContent.toUpperCase(), W / 2, 132);
+  } else {
+    ctx.fillStyle = v("--muted"); ctx.font = `500 12px ${FM}`; ctx.fillText("VANTAGEM", W / 2, 96);
+    ctx.fillStyle = $("gap").style.color ? col($("gap").style.color) : v("--fg"); ctx.font = `700 30px ${FD}`; ctx.fillText($("gap").textContent, W / 2, 128);
+  }
+  const bw = W - 48;
+  ctx.fillStyle = v("--map-base"); ctx.fillRect(24, 146, bw, 18);
+  ctx.fillStyle = col(COLOR[a.n]); ctx.fillRect(24, 146, bw * a.pct / 100, 18);
+  ctx.fillStyle = col(COLOR[b.n]); ctx.fillRect(24 + bw * (1 - b.pct / 100), 146, bw * b.pct / 100, 18);
+  ctx.fillStyle = v("--fg"); ctx.fillRect(W / 2 - 1, 142, 2, 26);
+  drawSVG(ctx, $("map"), 24, 184, 440);
+  ctx.textAlign = "left"; ctx.fillStyle = v("--fg"); ctx.font = `700 22px ${FD}`; ctx.fillText("Presidente minuto a minuto", 490, 214);
+  ctx.fillStyle = v("--muted"); ctx.font = `500 11px ${FM}`; ctx.fillText("% DOS VOTOS VÁLIDOS · HORÁRIO DE BRASÍLIA", 490, 232);
+  drawSVG(ctx, $("trend"), 470, 244, 470);
+  ctx.fillText("MAPA: COR MAIS FORTE = MAIOR VANTAGEM NO ESTADO", 490, 450);
+  if (!Object.keys(state.uf).length) ctx.fillText("MAPA POR ESTADO GRAVADO SÓ A PARTIR DE 21:14", 490, 468);
+  ctx.fillText("FONTE: TSE · CICEROHELLMANN.GITHUB.IO/ELEICAO-2026", 490, H - 24);
+}
+async function rpGif() {
+  const btn = $("rp-gif"), keep = RP.i, n = RP.nat.length, W = 960, H = 600;
+  btn.disabled = true; btn.textContent = "Gerando GIF…";
+  rpPlay(false);
+  const { GIFEncoder, quantize, applyPalette } = await import("https://cdn.jsdelivr.net/npm/gifenc@1.0.3/dist/gifenc.esm.js");
+  const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+  const ctx = cv.getContext("2d", { willReadFrequently: true });
+  document.body.classList.add("exporting");
+  try {
+    // one palette for the whole GIF, from the first, a middle and the last frame; the last slot is the transparent colour
+    const pick = [0, Math.floor(n / 3), n - 1], all = new Uint8ClampedArray(W * H * 4 * pick.length);
+    pick.forEach((i, k) => { rpShow(i); drawFrame(ctx, W, H); all.set(ctx.getImageData(0, 0, W, H).data, k * W * H * 4); });
+    const palette = quantize(all, 255), TI = palette.length;
+    palette.push([255, 0, 255]);
+    const gif = GIFEncoder();
+    let prev = null;
+    for (let i = 0; i < n; i++) {
+      rpShow(i); drawFrame(ctx, W, H);
+      const idx = applyPalette(ctx.getImageData(0, 0, W, H).data, palette), raw = idx.slice();
+      if (prev) for (let j = 0; j < idx.length; j++) if (idx[j] === prev[j]) idx[j] = TI;
+      const delay = i === n - 1 ? 5000 : i === 0 ? 1200 : RP.nat[i].partial ? 220 : 90;
+      gif.writeFrame(idx, W, H, { palette: i ? undefined : palette, delay, transparent: i > 0, transparentIndex: TI, dispose: 1 });
+      prev = raw;
+      if (i % 4 === 0) { btn.textContent = `Gerando GIF… ${Math.round(i / n * 100)}%`; await new Promise(r => setTimeout(r)); }
+    }
+    gif.finish();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([gif.bytes()], { type: "image/gif" }));
+    a.download = "apuracao-presidente-2026.gif";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    btn.textContent = "Baixar GIF";
+  } finally {
+    document.body.classList.remove("exporting");
+    btn.disabled = false;
+    rpShow(keep);
+  }
+}
+
 setInterval(() => {
   const s = Math.max(0, Math.round((state.nextAt - Date.now()) / 1000));
-  $("next").textContent = state.nextAt ? `próxima atualização em ${s}s` : "";
+  $("next").textContent = state.nextAt && !state.replay ? `próxima atualização em ${s}s` : "";
 }, 1000);
 
 renderAll();
-loadConfig().then(() => { renderMap(); pollNational(); pollStates(); loadFirstRound(); });
+loadConfig().then(() => { renderMap(); pollNational(); pollStates(); loadFirstRound(); loadReplay(); });
 </script>
 </body>
 </html>
