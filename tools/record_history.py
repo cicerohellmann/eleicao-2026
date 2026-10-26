@@ -1,5 +1,7 @@
 """Record every national TSE update into history.json and push it, so the page's
-"minuto a minuto" chart shows the whole night to every visitor.
+"minuto a minuto" chart shows the whole night to every visitor. Each push also
+refreshes data/, a mirror of every TSE file the page reads, which the page falls
+back to if TSE stops serving them.
 
 Run:  python3 tools/record_history.py      (stops by itself when the count is final)
 """
@@ -7,7 +9,14 @@ import datetime, json, pathlib, subprocess, time, urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "history.json"
-URL = "https://resultados.tse.jus.br/oficial/ele2026/6258/dados/br/br-c0001-e006258-u.json"
+BASE = "https://resultados.tse.jus.br/oficial"
+URL = BASE + "/ele2026/6258/dados/br/br-c0001-e006258-u.json"
+STATES = "ac al am ap ba ce df es go ma mg ms mt pa pb pe pi pr rj rn ro rr rs sc se sp to".split()
+RUNOFF = "ac am df es rn to".split()
+MIRROR = (["comum/config/ele-c.json"]
+          + [f"ele2026/6258/dados/{uf}/{uf}-c0001-e006258-u.json" for uf in ["br", "zz", *STATES]]
+          + [f"ele2026/6259/dados/{uf}/{uf}-c0003-e006259-u.json" for uf in STATES]
+          + [f"ele2026/6260/dados/{uf}/{uf}-c0003-e006260-u.json" for uf in RUNOFF])
 POLL_S, PUSH_EVERY_S = 60, 150
 
 
@@ -30,9 +39,22 @@ def git(*args):
     return subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True)
 
 
+def mirror():
+    for path in MIRROR:
+        try:
+            body = urllib.request.urlopen(f"{BASE}/{path}", timeout=20).read()
+            json.loads(body)  # only keep files that parse
+            f = ROOT / "data" / path
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_bytes(body)
+        except Exception as e:
+            print(time.strftime("%H:%M:%S"), "mirror error:", path, e)
+
+
 def push(hist, note):
     OUT.write_text(json.dumps({"source": URL, "points": hist}, separators=(",", ":")))
-    git("add", "history.json")
+    mirror()
+    git("add", "history.json", "data")
     if git("diff", "--cached", "--quiet").returncode == 0:
         return
     git("commit", "-m", f"Record count {note}")
