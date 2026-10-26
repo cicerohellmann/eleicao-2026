@@ -159,7 +159,7 @@ button:focus-visible, tr:focus-visible { outline: 2px solid var(--accent); outli
       <h1>Apuração ao vivo <span>· Presidente e governadores</span></h1>
     </div>
     <div class="meta">
-      <button id="rp-open" class="rpbtn" hidden>▶ Reviver a apuração</button>
+      <button id="rp-open" class="rpbtn">▶ Reviver a apuração</button>
       <span id="status" class="pill live">Carregando</span>
       <span id="updated">Aguardando o TSE…</span>
       <span id="next"></span>
@@ -174,6 +174,7 @@ button:focus-visible, tr:focus-visible { outline: 2px solid var(--accent); outli
       <input type="range" id="rp-slider" min="0" max="0" value="0" aria-label="Momento da apuração">
       <select id="rp-speed" aria-label="Velocidade"><option value="1">1×</option><option value="2" selected>2×</option><option value="4">4×</option></select>
       <button id="rp-gif">Baixar GIF</button>
+      <button id="rp-mp4" title="Para WhatsApp e redes sociais, que não animam GIFs enviados do computador">Baixar vídeo</button>
       <button id="rp-close">Sair da reprise</button>
     </div>
     <div class="rpmarks" id="rp-marks"></div>
@@ -480,7 +481,7 @@ function renderTrend() {
   const step = dev <= 1 ? 0.25 : dev <= 2 ? 0.5 : dev <= 5 ? 1 : dev <= 10 ? 2.5 : 5;
   const R0 = Math.ceil(dev * 1.08 / step) * step;
   const x = t => L + (t - t0) / (t1 - t0) * (W - L - R);
-  const y = v => T + (50 + R0 - v) / (2 * R0) * (Hh - T - B);
+  const y = v => T + (50 + R0 - Math.max(50 - R0, Math.min(50 + R0, v))) / (2 * R0) * (Hh - T - B);
   const d2 = step < 1 ? 2 : 1;
   let g = "";
   for (let v = 50 - R0; v <= 50 + R0 + 1e-9; v += step) {
@@ -626,24 +627,29 @@ async function loadConfig() {
 // drawn by the same renderers as live data; the live state is set aside and restored on exit.
 let RP = null, rpTimer = null;
 const pctMap = f => { const c = {}; for (const a of f.carg[0].agr) for (const p of a.par) for (const x of p.cand) c[x.n] = num(x.pvapn || x.pvap); return c; };
+// loaded on the first click: it is a few MB, most visitors never open it
 async function loadReplay() {
-  try { RP = await fetchJSON("replay.json"); } catch (e) { return; }
+  RP = await fetchJSON("replay.json");
   RP.series = RP.nat.map(f => ({ t: f.t, p: num(f.s.pstn || f.s.pst), c: pctMap(f) }));
-  const dev = Math.max(0.5, ...RP.series.flatMap(h => Object.values(h.c).map(v => Math.abs(v - 50))));
+  // the first few hundred ballot boxes swing wildly; scale the chart to the count from 1% on
+  const dev = Math.max(0.5, ...RP.series.filter(h => h.p >= 1).flatMap(h => Object.values(h.c).map(v => Math.abs(v - 50))));
   RP.dom = { t0: RP.series[0].t, t1: RP.series[RP.series.length - 1].t, dev };
   RP.marks = replayMarks();
   $("rp-slider").max = RP.nat.length - 1;
   $("rp-marks").innerHTML = RP.marks.map((m, k) => `<button data-k="${k}">${brt(RP.nat[m.i].t)} · ${esc(m.label)}</button>`).join("");
-  $("rp-open").hidden = false;
 }
 // key moments, read from the data
 function replayMarks() {
   const n = RP.nat.length, leader = i => { const c = RP.series[i].c; return Object.keys(c).sort((x, y) => c[y] - c[x])[0]; };
   const name = k => (cands(RP.nat[n - 1]).find(c => c.n === k) || {}).name;
   const out = [{ i: 0, label: `${dec(RP.series[0].p, 0)}% apurado` }];
-  for (let i = 1; i < n; i++) if (leader(i) !== leader(i - 1)) out.push({ i, label: `${name(leader(i))} na frente` });
+  // a lead change counts once the new leader holds it for 10 frames
+  for (let i = 1, cur = leader(0); i < n; i++) {
+    const l = leader(i);
+    if (l !== cur && Array.from({ length: Math.min(10, n - i) }, (_, j) => leader(i + j)).every(x => x === l)) { cur = l; out.push({ i, label: `${name(l)} na frente` }); }
+  }
   const sure = RP.nat.findIndex(f => { if (f.partial) return false; const [a, b] = cands(f); return Math.abs(a.votes - b.votes) > (+f.e.esnt || 0); });
-  if (sure >= 0) out.push({ i: sure, label: "vitória garantida" });
+  if (sure >= 0) out.push({ i: sure, label: "vitória garantida", win: true });
   const fin = RP.nat.findIndex(f => f.tf === "s");
   if (fin >= 0) out.push({ i: fin, label: "resultado final" });
   return out;
@@ -657,7 +663,8 @@ function rpShow(i) {
   RP.i = i;
   $("rp-slider").value = i;
   $("rp-time").textContent = brt(f.t);
-  $("rp-note").textContent = [f.partial && "Votos absolutos e o cálculo da vitória foram gravados só a partir de 21:16.", !s && "O mapa por estado foi gravado só a partir de 21:14."].filter(Boolean).join(" ");
+  $("rp-note").textContent = [f.recon && "Reconstruído dos boletins de urna do TSE, pela hora em que cada seção chegou ao TSE; a gravação ao vivo começa às 21:16.",
+    f.partial && "Votos absolutos e o cálculo da vitória foram gravados só a partir de 21:16.", !s && "O mapa por estado foi gravado só a partir de 21:14."].filter(Boolean).join(" ");
   const on = RP.marks.reduce((k, m, j) => m.i <= i ? j : k, 0);
   $("rp-marks").querySelectorAll("button").forEach((b, j) => b.classList.toggle("on", j === on));
   renderAll();
@@ -675,7 +682,12 @@ function rpPlay(on) {
   };
   rpTimer = setTimeout(tick, 700 / +$("rp-speed").value);
 }
-function rpOpen() {
+async function rpOpen() {
+  if (!RP) {
+    $("rp-open").textContent = "Carregando a reprise…";
+    try { await loadReplay(); } catch (e) { RP = null; $("rp-open").textContent = "Reprise indisponível"; return; }
+    $("rp-open").textContent = "▶ Reviver a apuração";
+  }
   RP.live = { nat: state.nat, uf: state.uf, gov2: state.gov2 };
   $("replay").hidden = false; $("rp-open").hidden = true; $("next").textContent = "";
   rpShow(0); rpPlay(true);
@@ -692,10 +704,14 @@ $("rp-play").onclick = () => rpPlay(!rpTimer);
 $("rp-slider").oninput = e => { rpPlay(false); rpShow(+e.target.value); };
 $("rp-marks").onclick = e => { const b = e.target.closest("button"); if (b) { rpPlay(false); rpShow(RP.marks[+b.dataset.k].i); } };
 $("rp-gif").onclick = () => rpGif().catch(e => { $("rp-gif").textContent = "Erro no GIF"; console.error(e); });
+$("rp-mp4").onclick = () => rpVideo().catch(e => { $("rp-mp4").textContent = "Erro no vídeo"; console.error(e); });
 
 // ---------- GIF export ----------
 // Each frame is drawn on a canvas from what the page shows (map and chart SVGs, hero texts),
 // then encoded with gifenc. Pixels unchanged since the previous frame are left transparent.
+// The GIF runs from the first ballot box to the moment the win was certain, one frame per
+// GIF_STEP of the night, and holds the last frame.
+const GIF_STEP = 2 * 60000;
 function drawSVG(ctx, svg, x, y, w) {
   const vb = svg.viewBox.baseVal, k = w / vb.width, A = (el, n) => +el.getAttribute(n);
   ctx.save(); ctx.translate(x, y); ctx.scale(k, k); ctx.translate(-vb.x, -vb.y);
@@ -764,10 +780,55 @@ function drawFrame(ctx, W, H) {
   drawSVG(ctx, $("trend"), 470, 244, 470);
   ctx.fillText("MAPA: COR MAIS FORTE = MAIOR VANTAGEM NO ESTADO", 490, 450);
   if (!Object.keys(state.uf).length) ctx.fillText("MAPA POR ESTADO GRAVADO SÓ A PARTIR DE 21:14", 490, 468);
+  else if (d.recon) ctx.fillText("RECONSTRUÍDO DOS BOLETINS DE URNA (HORA DE CHEGADA AO TSE)", 490, 468);
   ctx.fillText("FONTE: TSE · CICEROHELLMANN.GITHUB.IO/ELEICAO-2026", 490, H - 24);
 }
+function exportFrames() {
+  const win = RP.marks.find(m => m.win), end = win ? win.i : RP.nat.length - 1, frames = [];
+  for (let i = 0; i <= end; i++) if (i === end || !frames.length || RP.nat[i].t - RP.nat[frames[frames.length - 1]].t >= GIF_STEP) frames.push(i);
+  return frames;
+}
+const exportDelay = (i, n) => i === n - 1 ? 5000 : i === 0 ? 1200 : 110;
+function download(blob, name) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+// WhatsApp and most social apps send a GIF from a computer as a still picture; they play video.
+// The canvas is recorded in real time, so this takes as long as the video (~20 s).
+async function rpVideo() {
+  const btn = $("rp-mp4"), keep = RP.i, W = 960, H = 600, frames = exportFrames(), n = frames.length;
+  const type = ["video/mp4;codecs=avc1.42E01E", "video/mp4", "video/webm;codecs=vp9", "video/webm"].find(t => MediaRecorder.isTypeSupported(t));
+  btn.disabled = true; btn.textContent = "Gravando vídeo…";
+  rpPlay(false);
+  const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+  const ctx = cv.getContext("2d"), stream = cv.captureStream(0), track = stream.getVideoTracks()[0];
+  const rec = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 4e6 }), parts = [];
+  rec.ondataavailable = e => parts.push(e.data);
+  const done = new Promise(r => { rec.onstop = r; });
+  document.body.classList.add("exporting");
+  try {
+    rec.start();
+    for (let i = 0; i < n; i++) {
+      rpShow(frames[i]); drawFrame(ctx, W, H); track.requestFrame();
+      btn.textContent = `Gravando vídeo… ${Math.round(i / n * 100)}%`;
+      // the recorder keeps a frame only when the canvas was drawn on, so the held last frame is redrawn every 250 ms
+      if (i === n - 1) for (let k = 0; k < exportDelay(i, n) / 250; k++) { await new Promise(r => setTimeout(r, 250)); drawFrame(ctx, W, H); track.requestFrame(); }
+      else await new Promise(r => setTimeout(r, exportDelay(i, n)));
+    }
+    rec.stop(); await done;
+    download(new Blob(parts, { type: type.split(";")[0] }), `apuracao-presidente-2026.${type.includes("mp4") ? "mp4" : "webm"}`);
+    btn.textContent = "Baixar vídeo";
+  } finally {
+    document.body.classList.remove("exporting");
+    btn.disabled = false;
+    rpShow(keep);
+  }
+}
 async function rpGif() {
-  const btn = $("rp-gif"), keep = RP.i, n = RP.nat.length, W = 960, H = 600;
+  const btn = $("rp-gif"), keep = RP.i, W = 960, H = 600, frames = exportFrames(), n = frames.length;
   btn.disabled = true; btn.textContent = "Gerando GIF…";
   rpPlay(false);
   const { GIFEncoder, quantize, applyPalette } = await import("https://cdn.jsdelivr.net/npm/gifenc@1.0.3/dist/gifenc.esm.js");
@@ -776,27 +837,23 @@ async function rpGif() {
   document.body.classList.add("exporting");
   try {
     // one palette for the whole GIF, from the first, a middle and the last frame; the last slot is the transparent colour
-    const pick = [0, Math.floor(n / 3), n - 1], all = new Uint8ClampedArray(W * H * 4 * pick.length);
+    const pick = [0, Math.floor(n / 3), n - 1].map(k => frames[k]), all = new Uint8ClampedArray(W * H * 4 * pick.length);
     pick.forEach((i, k) => { rpShow(i); drawFrame(ctx, W, H); all.set(ctx.getImageData(0, 0, W, H).data, k * W * H * 4); });
     const palette = quantize(all, 255), TI = palette.length;
     palette.push([255, 0, 255]);
     const gif = GIFEncoder();
     let prev = null;
     for (let i = 0; i < n; i++) {
-      rpShow(i); drawFrame(ctx, W, H);
+      rpShow(frames[i]); drawFrame(ctx, W, H);
       const idx = applyPalette(ctx.getImageData(0, 0, W, H).data, palette), raw = idx.slice();
       if (prev) for (let j = 0; j < idx.length; j++) if (idx[j] === prev[j]) idx[j] = TI;
-      const delay = i === n - 1 ? 5000 : i === 0 ? 1200 : RP.nat[i].partial ? 220 : 90;
+      const delay = exportDelay(i, n);
       gif.writeFrame(idx, W, H, { palette: i ? undefined : palette, delay, transparent: i > 0, transparentIndex: TI, dispose: 1 });
       prev = raw;
       if (i % 4 === 0) { btn.textContent = `Gerando GIF… ${Math.round(i / n * 100)}%`; await new Promise(r => setTimeout(r)); }
     }
     gif.finish();
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([gif.bytes()], { type: "image/gif" }));
-    a.download = "apuracao-presidente-2026.gif";
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    download(new Blob([gif.bytes()], { type: "image/gif" }), "apuracao-presidente-2026.gif");
     btn.textContent = "Baixar GIF";
   } finally {
     document.body.classList.remove("exporting");
@@ -811,7 +868,7 @@ setInterval(() => {
 }, 1000);
 
 renderAll();
-loadConfig().then(() => { renderMap(); pollNational(); pollStates(); loadFirstRound(); loadReplay(); });
+loadConfig().then(() => { renderMap(); pollNational(); pollStates(); loadFirstRound(); });
 </script>
 </body>
 </html>
